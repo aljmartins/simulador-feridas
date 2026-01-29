@@ -9,7 +9,7 @@ import streamlit as st
 from dotenv import load_dotenv
 
 # caminho relativo (robusto)
-LOGO = Path(__file__).parent / "assets" / "logos.jpeg"
+LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
 
 # mostra no topo
 st.image(str(LOGO), use_container_width=True)
