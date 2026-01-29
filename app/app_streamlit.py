@@ -12,7 +12,21 @@ from dotenv import load_dotenv
 LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
 
 # mostra no topo
-st.image(str(LOGO), height=150)   # sem use_container_width
+import base64
+from pathlib import Path
+import streamlit as st
+
+LOGO = Path(__file__).resolve().parent / "assets" / "logo.all.jpeg"
+
+data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
+st.markdown(
+    f"""
+    <div style="text-align:center;">
+      <img src="data:image/jpeg;base64,{data}" style="height:150px; width:auto;" />
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 st.divider()  # opcional: uma linha separando
 
 from src.core import SimuladorLogica
