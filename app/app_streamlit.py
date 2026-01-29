@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
 
 # mostra no topo
-st.image(str(LOGO), use_container_width=True)
+st.image(str(LOGO), height=150)   # sem use_container_width
 st.divider()  # opcional: uma linha separando
 
 from src.core import SimuladorLogica
@@ -26,7 +26,7 @@ load_dotenv()
 
 st.set_page_config(page_title="Simulador TIMERS", layout="centered")
 st.markdown(
-    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h2>",
+    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
 )
 
