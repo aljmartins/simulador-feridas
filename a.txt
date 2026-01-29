@@ -1,0 +1,20 @@
+ O volume na unidade C n∆o tem nome.
+ O N£mero de SÇrie do Volume Ç CE48-F4A9
+
+ Pasta de C:\Users\aljma\simulador-feridas
+
+29/01/2026  15:05    <DIR>          .
+29/01/2026  15:05    <DIR>          ..
+28/01/2026  10:46               111 .env
+28/01/2026  14:20                35 .env.exemplo
+28/01/2026  13:32                91 .env.exemplo.txt
+29/01/2026  11:19                40 .gitignore
+28/01/2026  10:49    <DIR>          .venv
+29/01/2026  15:05                 0 a.txt
+28/01/2026  18:11    <DIR>          app
+28/01/2026  14:20               774 README.md
+28/01/2026  18:16                65 requirements.txt
+28/01/2026  11:32    <DIR>          scripts
+28/01/2026  17:05    <DIR>          src
+               7 arquivo(s)          1.116 bytes
+               6 pasta(s)   29.305.323.520 bytes dispon°veis

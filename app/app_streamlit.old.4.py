@@ -9,18 +9,92 @@ import streamlit as st
 from dotenv import load_dotenv
 
 from src.core import SimuladorLogica
-#from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator, GeminiImageGenerator, GeminiConsistencyChecker
-from src.gemini_flow_imagem_on import GeminiCaseGenerator, GeminiFeedbackGenerator, GeminiImageGenerator, GeminiConsistencyChecker
+# IMAGENS DESATIVADAS TEMPORARIAMENTE (crédito Gemini / NumPy / Python 3.14)
+from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator
+from src.pdf_report import gerar_pdf_relatorio
+import tempfile
+from datetime import datetime
 
 load_dotenv()
 
 st.set_page_config(page_title="Simulador TIMERS", layout="centered")
 st.title("Simulador TIMERS – Feridas Crônicas. PET G10 UFPel")
 
+# ---------- SIDEBAR: Exportar PDF (global) ----------
+st.sidebar.subheader("Exportar PDF")
+ep = st.session_state.get("export_payload", {})
+
+st.sidebar.caption("O PDF usa o último conteúdo gerado em qualquer aba (Simulador, Treino ou Estudante).")
+
+origem = ep.get("origem") or "—"
+st.sidebar.write(f"**Fonte atual:** {origem}")
+
+# Campos (mostra o que já existe)
+has_caso = bool(ep.get("caso"))
+has_resp = bool(str(ep.get("resposta_estudante", "")).strip())
+has_fb = bool(str(ep.get("feedback", "")).strip())
+
+st.sidebar.write("**Conteúdo disponível:**")
+st.sidebar.write(f"- Caso: {'✅' if has_caso else '—'}")
+st.sidebar.write(f"- Resposta do estudante: {'✅' if has_resp else '—'}")
+st.sidebar.write(f"- Feedback: {'✅' if has_fb else '—'}")
+
+if st.sidebar.button("Gerar PDF agora", key="global_pdf_btn"):
+    from datetime import datetime
+    import tempfile
+
+    ts = datetime.now().strftime("%Y%m%d-%H%M")
+    caso = ep.get("caso") or {}
+    eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+    nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+
+    # Monta strings (garante que nada quebre)
+    conteudo_caso = caso if isinstance(caso, dict) else {"caso": str(caso)}
+    resposta = ep.get("resposta_estudante", "") or "—"
+    plano_ideal = ep.get("plano_ideal", "") or "—"
+    feedback = ep.get("feedback", "") or "—"
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        gerar_pdf_relatorio(
+            path=tmp.name,
+            caso=conteudo_caso,
+            resposta_estudante=str(resposta),
+            plano_ideal=str(plano_ideal),
+            feedback=str(feedback),
+        )
+        with open(tmp.name, "rb") as f:
+            st.sidebar.download_button(
+                label="📄 Baixar PDF",
+                data=f,
+                file_name=nome_arquivo,
+                mime="application/pdf",
+                key="global_pdf_download",
+            )
+
+st.sidebar.divider()
+
 # Prefixos de keys (evita StreamlitDuplicateElementId)
 K_MANUAL = "manual"
 K_TREINO = "treino"
 K_ESTUDANTE = "estudante"
+
+# ==============================
+# EXPORTAÇÃO GLOBAL (PDF)
+# A ideia: qualquer aba pode atualizar estes campos, e o PDF pode ser gerado a qualquer momento.
+# ==============================
+if "export_payload" not in st.session_state:
+    st.session_state["export_payload"] = {
+        "origem": "",
+        "caso": None,
+        "descricao_visual": "",
+        "resposta_estudante": "",
+        "plano_ideal": "",
+        "feedback": "",
+    }
+
+def _set_export_payload(**kwargs):
+    st.session_state["export_payload"].update({k: v for k, v in kwargs.items() if v is not None})
+
 
 tabs = st.tabs(["Simulador (manual)", "Treino (Gemini)", "Estudante: inserir caso"])
 
@@ -65,7 +139,9 @@ with tabs[0]:
             "bordas": bordas,
         }
         sim = SimuladorLogica()
-        st.text(sim.avaliar(dados))
+        rel = sim.avaliar(dados)
+        st.text(rel)
+        _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="")
 
 # ---------- TAB 2: Treino com Gemini ----------
 with tabs[1]:
@@ -75,6 +151,7 @@ with tabs[1]:
         st.session_state[f"{K_TREINO}_case"] = None
         st.session_state[f"{K_TREINO}_visual"] = ""
         st.session_state[f"{K_TREINO}_ideal"] = ""
+        st.session_state[f"{K_TREINO}_feedback"] = ""
 
     colA, colB = st.columns(2)
     with colA:
@@ -98,7 +175,9 @@ with tabs[1]:
             st.session_state[f"{K_TREINO}_visual"] = out.visual_description
 
             sim = SimuladorLogica()
-            st.session_state[f"{K_TREINO}_ideal"] = sim.avaliar(out.scenario)
+            ideal = sim.avaliar(out.scenario)
+            st.session_state[f"{K_TREINO}_ideal"] = ideal
+            _set_export_payload(origem="Treino (Gemini)", caso=out.scenario, descricao_visual=out.visual_description, plano_ideal=ideal)
 
             st.success("Caso gerado. Agora o estudante responde e você gera o feedback.")
         except Exception as e:
@@ -106,52 +185,31 @@ with tabs[1]:
 
     case = st.session_state[f"{K_TREINO}_case"]
     if case:
+        st.markdown("### Cenário (JSON)")
+        st.json(case)
+
         st.markdown("### Descrição visual")
         st.write(st.session_state[f"{K_TREINO}_visual"])
 
-# --------- IMAGEM SINTÉTICA (GEMINI) ---------
-if f"{K_TREINO}_img" not in st.session_state:
-    st.session_state[f"{K_TREINO}_img"] = None
+        # --------- IMAGEM SINTÉTICA (GEMINI) ---------
+        # DESATIVADA TEMPORARIAMENTE
+        st.info("Imagem sintética desativada temporariamente (crédito Gemini / NumPy / Python 3.14).")
 
-model_image = st.text_input(
-    "Modelo Gemini (imagem)",
-    value="gemini-2.5-flash-image",
-    key=f"{K_TREINO}_model_image",
-)
-
-if st.button("Gerar imagem sintética (Gemini)", key=f"{K_TREINO}_gerar_img"):
-    try:
-        ig = GeminiImageGenerator(model=model_image)
-        img_bytes = ig.generate_image_bytes(
-            scenario=case,
-            visual_description=st.session_state[f"{K_TREINO}_visual"],
-        )
-        st.session_state[f"{K_TREINO}_img"] = img_bytes
-        st.success("Imagem sintética gerada.")
-    except Exception as e:
-        st.error(f"Falhou ao gerar imagem: {e}")
-
-if st.session_state.get(f"{K_TREINO}_img"):
-    st.image(
-        st.session_state[f"{K_TREINO}_img"],
-        caption="Imagem sintética (IA) – uso educacional",
-        use_container_width=True,
-    )
-    st.markdown("### Resposta do estudante")
-    estudante_plano = st.text_area(
+        st.markdown("### Resposta do estudante")
+        estudante_plano = st.text_area(
             "Digite o plano do estudante (TIME + condutas específicas):",
             height=180,
             key=f"{K_TREINO}_plano",
         )
 
-    col1, col2 = st.columns(2)
-    with col1:
+        col1, col2 = st.columns(2)
+        with col1:
             if st.button("Mostrar plano ideal (core)", key=f"{K_TREINO}_mostrar_ideal"):
                 st.markdown("### Plano ideal (core)")
                 st.text(st.session_state[f"{K_TREINO}_ideal"])
 
-    with col2:
-            if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback"):
+        with col2:
+            if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback_btn"):
                 if not estudante_plano.strip():
                     st.warning("O estudante ainda não escreveu nada.")
                 else:
@@ -163,21 +221,23 @@ if st.session_state.get(f"{K_TREINO}_img"):
                             student_plan=estudante_plano,
                             ideal_plan=st.session_state[f"{K_TREINO}_ideal"],
                         )
+                        st.session_state[f"{K_TREINO}_feedback"] = feedback
+                        _set_export_payload(origem="Treino (Gemini)", caso=case, descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""), resposta_estudante=estudante_plano, plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""), feedback=feedback)
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
-else:
-    st.info("Clique em 'Gerar caso (Gemini)' para iniciar o treino.")
+    else:
+        st.info("Clique em 'Gerar caso (Gemini)' para iniciar o treino.")
 
 # ---------- TAB 3: Estudante insere caso + feedback robusto ----------
 with tabs[2]:
     st.subheader("Estudante: inserir caso clínico")
 
-    # Estado para caso inserido pelo estudante
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
         st.session_state[f"{K_ESTUDANTE}_dados"] = None
         st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
+        st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
 
     modo = st.radio(
         "Como você quer inserir o caso?",
@@ -240,50 +300,29 @@ with tabs[2]:
         st.caption("Cole um JSON com as chaves: etiologia, itb, tecido, infeccao, exsudato, bordas.")
         raw = st.text_area("JSON do caso", height=220, key=f"{K_ESTUDANTE}_json")
 
-        if st.button("Avaliar JSON do estudante", key=f"{K_ESTUDANTE}_avaliar_json"):
-            import json
+if st.button("Avaliar JSON do estudante", key=f"{K_ESTUDANTE}_avaliar_json"):
+    import json
+    try:
+        dados = json.loads(raw)
+        st.session_state[f"{K_ESTUDANTE}_dados"] = dados
+        st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
 
-            try:
-                dados = json.loads(raw)
-                st.session_state[f"{K_ESTUDANTE}_dados"] = dados
-                st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
+        st.markdown("### Relatório (core / TIME)")
+        st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
-                st.markdown("### Relatório (core / TIME)")
-                st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
-            except Exception as e:
-                st.error(f"JSON inválido ou incompleto. Detalhe: {e}")
+        _set_export_payload(
+            origem="Estudante: inserir caso",
+            caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
+            plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal",""),
+        )
+    except Exception as e:
+        st.error(f"JSON inválido ou incompleto. Detalhe: {e}")
 
-    st.markdown("### Imagem (opcional) – checar consistência")
-img = st.file_uploader(
-    "Envie uma imagem para checagem (png/jpg/webp)",
-    type=["png", "jpg", "jpeg", "webp"],
-    key=f"{K_ESTUDANTE}_img_up",
-)
+    # --------- IMAGEM DO ESTUDANTE ---------
 
-if img:
-    st.image(img, caption="Imagem enviada pelo estudante", use_container_width=True)
+    # DESATIVADA TEMPORARIAMENTE
+    st.info("Upload de imagem desativado temporariamente (NumPy / Python 3.14).")
 
-    modelo_check = st.text_input(
-        "Modelo Gemini (checagem imagem×parâmetros)",
-        value="gemini-3-flash-preview",
-        key=f"{K_ESTUDANTE}_model_check",
-    )
-
-    if st.button("Checar consistência (Gemini)", key=f"{K_ESTUDANTE}_check_btn"):
-        try:
-            checker = GeminiConsistencyChecker(model=modelo_check)
-            result = checker.check(
-                scenario=st.session_state[f"{K_ESTUDANTE}_dados"],
-                image_bytes=img.getvalue(),
-                mime_type=img.type,
-            )
-            st.markdown("### Checagem de consistência (Gemini)")
-            st.json(result)
-        except Exception as e:
-            st.error(f"Falhou na checagem: {e}")
-    
-    
-    # --------- FEEDBACK ROBUSTO (GEMINI) ---------
     st.divider()
     st.subheader("Feedback robusto (Gemini)")
 
@@ -322,7 +361,50 @@ if img:
                             student_plan=estudante_plano,
                             ideal_plan=st.session_state[f"{K_ESTUDANTE}_ideal"],
                         )
+                        st.session_state[f"{K_ESTUDANTE}_feedback"] = feedback
+                        # Guarda uma cópia com nome fixo (facilita exportação PDF)
+                        st.session_state["feedback_estudante"] = feedback
+                        _set_export_payload(origem="Estudante: inserir caso", caso=st.session_state.get(f"{K_ESTUDANTE}_dados"), resposta_estudante=estudante_plano, plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal",""), feedback=feedback)
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
+
+    # ---------- EXPORTAR RELATÓRIO (PDF) ----------
+    st.divider()
+    st.subheader("Exportar relatório (PDF)")
+
+    # Dados necessários
+    caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
+    plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
+    resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano", "")
+    feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+
+    pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
+
+    if not pronto:
+        st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
+    else:
+        if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
+            # Nome amigável
+            ts = datetime.now().strftime("%Y%m%d-%H%M")
+            eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+            nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                gerar_pdf_relatorio(
+                    path=tmp.name,
+                    caso=caso,
+                    resposta_estudante=str(resposta_estudante),
+                    plano_ideal=str(plano_ideal),
+                    feedback=str(feedback_pdf),
+                )
+                with open(tmp.name, "rb") as f:
+                    st.download_button(
+                        label="📄 Baixar PDF",
+                        data=f,
+                        file_name=nome_arquivo,
+                        mime="application/pdf",
+                        key=f"{K_ESTUDANTE}_pdf_download",
+                    )
+
