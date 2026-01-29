@@ -27,6 +27,29 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
+import streamlit as st
+import os
+
+def check_password():
+    if "auth" not in st.session_state:
+        st.session_state.auth = False
+
+    if not st.session_state.auth:
+        st.title("Acesso restrito")
+        pwd = st.text_input("Senha", type="password")
+
+        if st.button("Entrar"):
+            if pwd == os.getenv("APP_PASSWORD"):
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta")
+
+        st.stop()
+
+check_password()
+
 st.divider()  # opcional: uma linha separando
 
 from src.core import SimuladorLogica
