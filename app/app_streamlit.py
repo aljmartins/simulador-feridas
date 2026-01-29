@@ -8,70 +8,81 @@ sys.path.append(str(ROOT))
 import streamlit as st
 from dotenv import load_dotenv
 
+# caminho relativo (robusto)
+LOGO = Path(__file__).parent / "assets" / "logos.jpeg"
+
+# mostra no topo
+st.image(str(LOGO), use_container_width=True)
+st.divider()  # opcional: uma linha separando
+
 from src.core import SimuladorLogica
 # IMAGENS DESATIVADAS TEMPORARIAMENTE (crédito Gemini / NumPy / Python 3.14)
 from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator
-from src.pdf_report import gerar_pdf_relatorio
-import tempfile
-from datetime import datetime
+# from src.pdf_report import gerar_pdf_relatorio  # DESATIVADO: exportação PDF (mantido como referência)
+# import tempfile  # DESATIVADO: exportação PDF (mantido como referência)
+# from datetime import datetime  # DESATIVADO: exportação PDF (mantido como referência)
 
 load_dotenv()
 
 st.set_page_config(page_title="Simulador TIMERS", layout="centered")
-st.title("Simulador TIMERS – Feridas Crônicas. PET G10 UFPel")
+st.markdown(
+    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h2>",
+    unsafe_allow_html=True
+)
+
 
 # ---------- SIDEBAR: Exportar PDF (global) ----------
-st.sidebar.subheader("Exportar PDF")
-ep = st.session_state.get("export_payload", {})
-
-st.sidebar.caption("O PDF usa o último conteúdo gerado em qualquer aba (Simulador, Treino ou Estudante).")
-
-origem = ep.get("origem") or "—"
-st.sidebar.write(f"**Fonte atual:** {origem}")
-
+# st.sidebar.subheader("Exportar PDF")
+# ep = st.session_state.get("export_payload", {})
+# 
+# st.sidebar.caption("O PDF usa o último conteúdo gerado em qualquer aba (Simulador, Treino ou Estudante).")
+# 
+# origem = ep.get("origem") or "—"
+# st.sidebar.write(f"**Fonte atual:** {origem}")
+# 
 # Campos (mostra o que já existe)
-has_caso = bool(ep.get("caso"))
-has_resp = bool(str(ep.get("resposta_estudante", "")).strip())
-has_fb = bool(str(ep.get("feedback", "")).strip())
-
-st.sidebar.write("**Conteúdo disponível:**")
-st.sidebar.write(f"- Caso: {'✅' if has_caso else '—'}")
-st.sidebar.write(f"- Resposta do estudante: {'✅' if has_resp else '—'}")
-st.sidebar.write(f"- Feedback: {'✅' if has_fb else '—'}")
-
-if st.sidebar.button("Gerar PDF agora", key="global_pdf_btn"):
-    from datetime import datetime
-    import tempfile
-
-    ts = datetime.now().strftime("%Y%m%d-%H%M")
-    caso = ep.get("caso") or {}
-    eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
-    nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
-
+# has_caso = bool(ep.get("caso"))
+# has_resp = bool(str(ep.get("resposta_estudante", "")).strip())
+# has_fb = bool(str(ep.get("feedback", "")).strip())
+# 
+# st.sidebar.write("**Conteúdo disponível:**")
+# st.sidebar.write(f"- Caso: {'✅' if has_caso else '—'}")
+# st.sidebar.write(f"- Resposta do estudante: {'✅' if has_resp else '—'}")
+# st.sidebar.write(f"- Feedback: {'✅' if has_fb else '—'}")
+# 
+# if st.sidebar.button("Gerar PDF agora", key="global_pdf_btn"):
+#     from datetime import datetime
+#     import tempfile
+# 
+#     ts = datetime.now().strftime("%Y%m%d-%H%M")
+#     caso = ep.get("caso") or {}
+#     eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+#     nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+# 
     # Monta strings (garante que nada quebre)
-    conteudo_caso = caso if isinstance(caso, dict) else {"caso": str(caso)}
-    resposta = ep.get("resposta_estudante", "") or "—"
-    plano_ideal = ep.get("plano_ideal", "") or "—"
-    feedback = ep.get("feedback", "") or "—"
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-        gerar_pdf_relatorio(
-            path=tmp.name,
-            caso=conteudo_caso,
-            resposta_estudante=str(resposta),
-            plano_ideal=str(plano_ideal),
-            feedback=str(feedback),
-        )
-        with open(tmp.name, "rb") as f:
-            st.sidebar.download_button(
-                label="📄 Baixar PDF",
-                data=f,
-                file_name=nome_arquivo,
-                mime="application/pdf",
-                key="global_pdf_download",
-            )
-
-st.sidebar.divider()
+#     conteudo_caso = caso if isinstance(caso, dict) else {"caso": str(caso)}
+#     resposta = ep.get("resposta_estudante", "") or "—"
+#     plano_ideal = ep.get("plano_ideal", "") or "—"
+#     feedback = ep.get("feedback", "") or "—"
+# 
+#     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+#         gerar_pdf_relatorio(
+#             path=tmp.name,
+#             caso=conteudo_caso,
+#             resposta_estudante=str(resposta),
+#             plano_ideal=str(plano_ideal),
+#             feedback=str(feedback),
+#         )
+#         with open(tmp.name, "rb") as f:
+#             st.sidebar.download_button(
+#                 label="📄 Baixar PDF",
+#                 data=f,
+#                 file_name=nome_arquivo,
+#                 mime="application/pdf",
+#                 key="global_pdf_download",
+#             )
+# 
+# st.sidebar.divider()
 
 # Prefixos de keys (evita StreamlitDuplicateElementId)
 K_MANUAL = "manual"
@@ -371,40 +382,40 @@ if st.button("Avaliar JSON do estudante", key=f"{K_ESTUDANTE}_avaliar_json"):
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
     # ---------- EXPORTAR RELATÓRIO (PDF) ----------
-    st.divider()
-    st.subheader("Exportar relatório (PDF)")
-
+#     st.divider()
+#     st.subheader("Exportar relatório (PDF)")
+# 
     # Dados necessários
-    caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
-    plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
-    resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano", "")
-    feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
-
-    pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
-
-    if not pronto:
-        st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
-    else:
-        if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
+#     caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
+#     plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
+#     resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano", "")
+#     feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+# 
+#     pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
+# 
+#     if not pronto:
+#         st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
+#     else:
+#         if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
             # Nome amigável
-            ts = datetime.now().strftime("%Y%m%d-%H%M")
-            eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
-            nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
-
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                gerar_pdf_relatorio(
-                    path=tmp.name,
-                    caso=caso,
-                    resposta_estudante=str(resposta_estudante),
-                    plano_ideal=str(plano_ideal),
-                    feedback=str(feedback_pdf),
-                )
-                with open(tmp.name, "rb") as f:
-                    st.download_button(
-                        label="📄 Baixar PDF",
-                        data=f,
-                        file_name=nome_arquivo,
-                        mime="application/pdf",
-                        key=f"{K_ESTUDANTE}_pdf_download",
-                    )
-
+#             ts = datetime.now().strftime("%Y%m%d-%H%M")
+#             eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+#             nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+# 
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+#                 gerar_pdf_relatorio(
+#                     path=tmp.name,
+#                     caso=caso,
+#                     resposta_estudante=str(resposta_estudante),
+#                     plano_ideal=str(plano_ideal),
+#                     feedback=str(feedback_pdf),
+#                 )
+#                 with open(tmp.name, "rb") as f:
+#                     st.download_button(
+#                         label="📄 Baixar PDF",
+#                         data=f,
+#                         file_name=nome_arquivo,
+#                         mime="application/pdf",
+#                         key=f"{K_ESTUDANTE}_pdf_download",
+#                     )
+# 
