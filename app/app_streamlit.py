@@ -2,10 +2,30 @@
 import sys
 from pathlib import Path
 
+import streamlit as st
+
+# Inserido Diminuir letra #
+
+st.markdown(
+    """
+    <style>
+    h1 {
+        font-size: 1.6rem !important;
+    }
+    p {
+        font-size: 0.95rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+# Fim Inserido #
+
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT))
 
-import streamlit as st
+
 from dotenv import load_dotenv
 
 # caminho relativo (robusto)
