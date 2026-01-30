@@ -4,8 +4,31 @@ from pathlib import Path
 
 import streamlit as st
 
-# Inserido Diminuir letra #
+# Menos margem início
+import streamlit as st
 
+st.set_page_config(
+    page_title="Simulador TIMERS",
+    layout="centered"
+)
+
+st.markdown(
+    """
+    <style>
+    .block-container {
+        padding-top: 1rem !important;
+    }
+    h2 {
+        margin-top: 0.2rem !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+# Menos margem início fim
+
+
+# Inserido Diminuir letra #
 st.markdown(
     """
     <style>
@@ -30,7 +53,6 @@ from dotenv import load_dotenv
 
 # caminho relativo (robusto)
 LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
-
 # mostra no topo
 import base64
 from pathlib import Path
@@ -42,11 +64,31 @@ data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
 st.markdown(
     f"""
     <div style="text-align:center;">
-      <img src="data:image/jpeg;base64,{data}" style="height:150px; width:auto;" />
+      <img src="data:image/jpeg;base64,{data}" style="height:160px; width:auto;" />
     </div>
     """,
     unsafe_allow_html=True
 )
+
+st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+
+
+# INSERE Imagem
+LOGO = Path(__file__).parent / "assets" / "imagem.jpeg"
+IMAGEM = Path(__file__).resolve().parent / "assets" / "imagem.jpeg"
+data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
+st.markdown(
+    f"""
+    <div style="text-align:center;">
+      <img src="data:image/jpeg;base64,{data}" style="height:120px; width:auto;" />
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# INSERE Imagem Fim
+
+
 
 import streamlit as st
 import os
