@@ -286,18 +286,16 @@ with tabs[2]:
         st.session_state[f"{K_ESTUDANTE}_dados"] = None
         st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
         st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
-        st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
 
     modo = st.radio(
         "Como você quer inserir o caso?",
-        ["Formulário", "Texto corrido"],
+        ["Formulário", "Colar JSON"],
         horizontal=True,
         key=f"{K_ESTUDANTE}_modo",
     )
 
     sim = SimuladorLogica()
 
-    # ----- Entrada do caso -----
     if modo == "Formulário":
         col1, col2 = st.columns(2)
 
@@ -331,7 +329,7 @@ with tabs[2]:
                 key=f"{K_ESTUDANTE}_bordas",
             )
 
-        if st.button("Avaliar caso (formulário)", key=f"{K_ESTUDANTE}_avaliar_form"):
+        if st.button("Avaliar caso do estudante", key=f"{K_ESTUDANTE}_avaliar_form"):
             dados = {
                 "etiologia": etiologia,
                 "itb": itb if itb.strip() else None,
@@ -342,106 +340,66 @@ with tabs[2]:
             }
             st.session_state[f"{K_ESTUDANTE}_dados"] = dados
             st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
-            st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
 
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
-            _set_export_payload(
-                origem="Estudante: inserir caso (formulário)",
-                caso=dados,
-                plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
-            )
-
     else:
-        st.caption("Descreva o caso em texto corrido. Se faltar dado, o sistema vai te perguntar o que falta.")
-        caso_txt = st.text_area(
-            "Descrição do caso (texto corrido)",
-            height=220,
-            key=f"{K_ESTUDANTE}_caso_texto",
+        st.caption("Cole um JSON com as chaves: etiologia, itb, tecido, infeccao, exsudato, bordas.")
+        raw = st.text_area("JSON do caso", height=220, key=f"{K_ESTUDANTE}_json")
+
+if st.button("Avaliar JSON do estudante", key=f"{K_ESTUDANTE}_avaliar_json"):
+    import json
+    try:
+        dados = json.loads(raw)
+        st.session_state[f"{K_ESTUDANTE}_dados"] = dados
+        st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
+
+        st.markdown("### Relatório (core / TIME)")
+        st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
+
+        _set_export_payload(
+            origem="Estudante: inserir caso",
+            caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
+            plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal",""),
         )
-
-        colA, colB = st.columns(2)
-        with colA:
-            modelo_caso = st.text_input(
-                "Modelo Gemini (extrair caso)",
-                value="gemini-3-flash-preview",
-                key=f"{K_ESTUDANTE}_model_case_tab3",
-            )
-
-        with colB:
-            if st.button("Analisar caso (Gemini)", key=f"{K_ESTUDANTE}_analisar_texto"):
-                if not caso_txt.strip():
-                    st.warning("Você ainda não descreveu o caso.")
-                else:
-                    try:
-                        from src.gemini_flow import GeminiCaseFromTextExtractor
-
-                        ex = GeminiCaseFromTextExtractor(model=modelo_caso)
-                        parsed = ex.extract_or_ask(caso_txt)
-
-                        if parsed.get("status") == "NEED_MORE_INFO":
-                            st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = parsed.get("questions", "")
-                            st.session_state[f"{K_ESTUDANTE}_dados"] = None
-                            st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
-                            st.warning("Faltam informações. Responda às perguntas abaixo e rode de novo.")
-                        else:
-                            dados = parsed["scenario"]
-                            st.session_state[f"{K_ESTUDANTE}_dados"] = dados
-                            st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
-                            st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
-
-                            st.success("Caso entendido. Relatório gerado pelo core.")
-                            st.markdown("### Caso interpretado (interno)")
-                            st.json(dados)
-
-                            st.markdown("### Relatório (core / TIME)")
-                            st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
-
-                            _set_export_payload(
-                                origem="Estudante: inserir caso (texto corrido)",
-                                caso=dados,
-                                plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
-                            )
-                    except Exception as e:
-                        st.error(f"Falhou ao interpretar o texto. Detalhe: {e}")
-
-        if st.session_state.get(f"{K_ESTUDANTE}_perguntas_caso"):
-            st.markdown("### Perguntas do sistema (para completar o caso)")
-            st.write(st.session_state[f"{K_ESTUDANTE}_perguntas_caso"])
+    except Exception as e:
+        st.error(f"JSON inválido ou incompleto. Detalhe: {e}")
 
     # --------- IMAGEM DO ESTUDANTE ---------
+
+    # DESATIVADA TEMPORARIAMENTE
     st.info("Upload de imagem desativado temporariamente (NumPy / Python 3.14).")
 
     st.divider()
     st.subheader("Feedback robusto (Gemini)")
 
     if not st.session_state.get(f"{K_ESTUDANTE}_dados"):
-        st.info("Primeiro finalize o caso (Formulário ou Texto corrido). Depois escreva seu plano e gere o feedback.")
+        st.info("Primeiro avalie um caso (Formulário ou JSON). Depois escreva o plano do estudante e gere o feedback.")
     else:
         modelo_fb = st.text_input(
             "Modelo Gemini (feedback)",
             value="gemini-3-flash-preview",
-            key=f"{K_ESTUDANTE}_model_feedback_tab3",
+            key=f"{K_ESTUDANTE}_model_feedback",
         )
 
-        st.markdown("### Plano de cuidado proposto pelo estudante (texto corrido)")
+        st.markdown("### Plano de cuidado proposto pelo estudante")
         estudante_plano = st.text_area(
-            "Explique seu raciocínio e o plano (TIME + condutas específicas):",
+            "Escreva o plano do estudante (TIME + condutas específicas):",
             height=180,
-            key=f"{K_ESTUDANTE}_plano_tab3",
+            key=f"{K_ESTUDANTE}_plano",
         )
 
         colx, coly = st.columns(2)
         with colx:
-            if st.button("Mostrar plano ideal (core)", key=f"{K_ESTUDANTE}_mostrar_ideal_tab3"):
+            if st.button("Mostrar plano ideal (core)", key=f"{K_ESTUDANTE}_mostrar_ideal"):
                 st.markdown("### Plano ideal (core)")
                 st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
         with coly:
-            if st.button("Gerar feedback (Gemini)", key=f"{K_ESTUDANTE}_gerar_feedback_tab3"):
+            if st.button("Gerar feedback robusto (Gemini)", key=f"{K_ESTUDANTE}_gerar_feedback"):
                 if not estudante_plano.strip():
-                    st.warning("Você ainda não escreveu o plano.")
+                    st.warning("O estudante ainda não escreveu o plano.")
                 else:
                     try:
                         fb = GeminiFeedbackGenerator(model=modelo_fb)
@@ -451,60 +409,50 @@ with tabs[2]:
                             student_plan=estudante_plano,
                             ideal_plan=st.session_state[f"{K_ESTUDANTE}_ideal"],
                         )
-
                         st.session_state[f"{K_ESTUDANTE}_feedback"] = feedback
+                        # Guarda uma cópia com nome fixo (facilita exportação PDF)
                         st.session_state["feedback_estudante"] = feedback
-
-                        _set_export_payload(
-                            origem="Estudante: inserir caso",
-                            caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
-                            resposta_estudante=estudante_plano,
-                            plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal", ""),
-                            feedback=feedback,
-                        )
-
-                        if feedback.strip().startswith("PRECISO DE MAIS DADOS:"):
-                            st.warning("Seu texto ainda está incompleto. Responda o que falta e rode novamente.")
-                        st.markdown("### Retorno do professor (Gemini)")
+                        _set_export_payload(origem="Estudante: inserir caso", caso=st.session_state.get(f"{K_ESTUDANTE}_dados"), resposta_estudante=estudante_plano, plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal",""), feedback=feedback)
+                        st.markdown("### Feedback ao estudante")
                         st.write(feedback)
-
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
     # ---------- EXPORTAR RELATÓRIO (PDF) ----------
-    # st.divider()
-    # st.subheader("Exportar relatório (PDF)")
-    #
+#     st.divider()
+#     st.subheader("Exportar relatório (PDF)")
+# 
     # Dados necessários
-    # caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
-    # plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
-    # resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano_tab3", "")
-    # feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
-    #
-    # pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
-    #
-    # if not pronto:
-    #     st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
-    # else:
-    #     if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
-    #         # Nome amigável
-    #         ts = datetime.now().strftime("%Y%m%d-%H%M")
-    #         eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
-    #         nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
-    #
-    #         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-    #             gerar_pdf_relatorio(
-    #                 path=tmp.name,
-    #                 caso=caso,
-    #                 resposta_estudante=str(resposta_estudante),
-    #                 plano_ideal=str(plano_ideal),
-    #                 feedback=str(feedback_pdf),
-    #             )
-    #             with open(tmp.name, "rb") as f:
-    #                 st.download_button(
-    #                     label="📄 Baixar PDF",
-    #                     data=f,
-    #                     file_name=nome_arquivo,
-    #                     mime="application/pdf",
-    #                     key=f"{K_ESTUDANTE}_pdf_download",
-    #                 )
+#     caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
+#     plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
+#     resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano", "")
+#     feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+# 
+#     pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
+# 
+#     if not pronto:
+#         st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
+#     else:
+#         if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
+            # Nome amigável
+#             ts = datetime.now().strftime("%Y%m%d-%H%M")
+#             eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+#             nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+# 
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+#                 gerar_pdf_relatorio(
+#                     path=tmp.name,
+#                     caso=caso,
+#                     resposta_estudante=str(resposta_estudante),
+#                     plano_ideal=str(plano_ideal),
+#                     feedback=str(feedback_pdf),
+#                 )
+#                 with open(tmp.name, "rb") as f:
+#                     st.download_button(
+#                         label="📄 Baixar PDF",
+#                         data=f,
+#                         file_name=nome_arquivo,
+#                         mime="application/pdf",
+#                         key=f"{K_ESTUDANTE}_pdf_download",
+#                     )
+# 

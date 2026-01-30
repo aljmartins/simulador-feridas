@@ -92,23 +92,34 @@ class GeminiFeedbackGenerator:
         ideal_plan: str,
     ) -> str:
         prompt = (
-            "Dados do cenário da ferida (JSON):\n"
-            f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
-            "Descrição visual detalhada da ferida:\n"
-            f"{visual_description}\n\n"
-            "Proposta de tratamento do estudante:\n"
-            f"{student_plan}\n\n"
-            "Plano de tratamento ideal (gerado pelo simulador):\n"
-            f"{ideal_plan}\n\n"
-            "Compare a proposta do estudante com o plano ideal, focando no protocolo T.I.M.E. "
-            "(Tecido, Infecção, Umidade, Bordas) e nas condutas específicas para a etiologia.\n\n"
-            "Forneça feedback construtivo ao estudante, abordando:\n"
-            "1) O que está correto/relevante\n"
-            "2) O que está incorreto ou incompleto\n"
-            "3) Condutas específicas que faltaram e por quê\n"
-            "4) Linguagem clara, pedagógica e encorajadora (priorize segurança do paciente)\n\n"
-            "Formate com títulos e marcadores, como um professor faria."
-        )
+    "Você é um professor exigente e justo. Antes de dar feedback, você deve checar se o texto do estudante "
+    "tem informações mínimas para ser avaliado com segurança.\n\n"
+    "Se o plano do estudante estiver incompleto/raso (ex.: não cobre TIME, não considera etiologia, não aborda segurança, "
+    "não descreve condutas), você NÃO deve avaliar. Você deve responder EXATAMENTE assim:\n"
+    "PRECISO DE MAIS DADOS:\n"
+    "- pergunta 1\n"
+    "- pergunta 2\n"
+    "(no máximo 8 perguntas)\n\n"
+    "Se estiver completo o suficiente, então faça feedback pedagógico.\n\n"
+    "Dados do cenário da ferida (JSON):\n"
+    f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
+    "Descrição visual detalhada da ferida:\n"
+    f"{visual_description}\n\n"
+    "Proposta de tratamento do estudante:\n"
+    f"{student_plan}\n\n"
+    "Plano de tratamento ideal (gerado pelo simulador):\n"
+    f"{ideal_plan}\n\n"
+    "Quando for avaliar, compare com o plano ideal, focando em T.I.M.E. (Tecido, Infecção, Umidade, Bordas) "
+    "e condutas específicas da etiologia.\n\n"
+    "Formato do feedback (somente se completo):\n"
+    "1) Pontos fortes\n"
+    "2) Lacunas/ajustes\n"
+    "3) Riscos e segurança do paciente\n"
+    "4) Próximo passo (o que o estudante deve estudar/fazer)\n"
+    "Use linguagem clara, encorajadora e objetiva."
+)
+
+      
         resp = self.client.models.generate_content(model=self.model, contents=prompt)
         return (resp.text or "").strip()
 
@@ -121,3 +132,60 @@ import base64
 # Motivo: crédito Gemini / NumPy / Python 3.14
 # Reativar quando ambiente estiver estável
 # ==============================
+
+# INÍCIO TRECHO ADICIONADO 
+
+class GeminiCaseFromTextExtractor:
+    """
+    Lê um texto corrido (descrição do caso) e:
+    - ou extrai um scenario JSON no formato do simulador
+    - ou retorna perguntas objetivas quando faltar dado essencial.
+    """
+
+    def __init__(self, model: str = "gemini-3-flash-preview"):
+        load_dotenv()
+        self.client = genai.Client()
+        self.model = model
+
+    def extract_or_ask(self, case_text: str) -> Dict[str, Any]:
+        prompt = (
+            "Você é um professor clínico. Você vai ler uma descrição em texto corrido de um caso de ferida crônica.\n\n"
+            "TAREFA:\n"
+            "1) Se o texto tiver informação suficiente, extraia um JSON com o formato EXATO abaixo.\n"
+            "2) Se faltar informação essencial para preencher o JSON com confiança, NÃO invente. Em vez disso, retorne status NEED_MORE_INFO e uma lista curta de perguntas.\n\n"
+            "FORMATO DE SAÍDA (retorne APENAS JSON, sem texto extra):\n"
+            "{\n"
+            '  "status": "OK" ou "NEED_MORE_INFO",\n'
+            '  "scenario": {\n'
+            '    "etiologia": "Arterial|Venosa|Diabética|Pressão",\n'
+            '    "itb": number ou null,\n'
+            '    "tecido": "Necrose|Esfacelo|Granulação",\n'
+            '    "infeccao": true|false,\n'
+            '    "exsudato": "Seco|Equilibrado|Muito Molhado",\n'
+            '    "bordas": "Estagnada|Avançando"\n'
+            "  },\n"
+            '  "questions": "string com perguntas (somente se NEED_MORE_INFO)"\n'
+            "}\n\n"
+            "REGRAS IMPORTANTES:\n"
+            "- itb só faz sentido para etiologia Arterial ou Venosa; caso contrário, use null.\n"
+            "- Se houver dúvida real entre opções (ex.: tecido), use NEED_MORE_INFO.\n"
+            "- Perguntas devem ser diretas e poucas (no máximo 6), priorizando segurança.\n\n"
+            "TEXTO DO CASO:\n"
+            f"{case_text}"
+        )
+
+        resp = self.client.models.generate_content(model=self.model, contents=prompt)
+        raw = _strip_code_fences(resp.text or "")
+        data = json.loads(raw)
+
+        # sanity-check leve: se OK sem scenario, força NEED_MORE_INFO
+        if data.get("status") == "OK" and not isinstance(data.get("scenario"), dict):
+            return {
+                "status": "NEED_MORE_INFO",
+                "scenario": None,
+                "questions": "Não consegui estruturar o caso. Informe etiologia, tecido, infecção, exsudato e bordas (e ITB se arterial/venosa).",
+            }
+        return data
+
+
+# FIM TRECHO ADICIONADO
