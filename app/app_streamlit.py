@@ -371,6 +371,7 @@ with tabs[2]:
         st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
         st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = None
         st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
+        st.session_state[f"{K_ESTUDANTE}_show_ideal"] = False
 
     modo = st.radio(
         "Como você quer inserir o caso?",
@@ -540,8 +541,8 @@ with tabs[2]:
         colx, coly = st.columns(2)
         with colx:
             if st.button("Mostrar plano ideal (core)", key=f"{K_ESTUDANTE}_mostrar_ideal_tab3"):
-                st.markdown("### Plano ideal (core)")
-                st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
+                st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
+                st.rerun()
 
         with coly:
             if st.button("Gerar feedback (Gemini)", key=f"{K_ESTUDANTE}_gerar_feedback_tab3"):
@@ -560,6 +561,9 @@ with tabs[2]:
                         st.session_state[f"{K_ESTUDANTE}_feedback"] = feedback
                         st.session_state["feedback_estudante"] = feedback
 
+                        # após gerar feedback, também mostrar o plano ideal automaticamente
+                        st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
+
                         _set_export_payload(
                             origem="Estudante: inserir caso",
                             caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
@@ -568,14 +572,22 @@ with tabs[2]:
                             feedback=feedback,
                         )
 
-                        if feedback.strip().startswith("PRECISO DE MAIS DADOS:"):
-                            st.warning("Seu texto ainda está incompleto. Responda o que falta e rode novamente.")
-                        st.markdown("### Retorno do professor (Gemini)")
-                        st.write(feedback)
+                        st.rerun()
 
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
+        # --------- Resultados persistentes (não somem ao clicar em outros botões) ---------
+        feedback_salvo = st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+        if feedback_salvo:
+            if str(feedback_salvo).strip().startswith("PRECISO DE MAIS DADOS:"):
+                st.warning("Seu texto ainda está incompleto. Responda o que falta e rode novamente.")
+            st.markdown("### Retorno do professor (Gemini)")
+            st.write(feedback_salvo)
+
+        if st.session_state.get(f"{K_ESTUDANTE}_show_ideal"):
+            st.markdown("### Plano ideal (core)")
+            st.text(st.session_state.get(f"{K_ESTUDANTE}_ideal", ""))
     # ---------- EXPORTAR RELATÓRIO (PDF) ----------
     # st.divider()
     # st.subheader("Exportar relatório (PDF)")
