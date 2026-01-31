@@ -344,10 +344,32 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Estudante: inserir caso clínico")
 
+
+    # Botão simples para impressão via navegador (Ctrl+P), mantendo o relatório completo na tela
+    st.components.v1.html(
+        """
+        <script>
+          function printPage(){ window.print(); }
+        </script>
+        <button onclick="printPage()" style="
+          padding:10px 14px;
+          border-radius:10px;
+          border:1px solid #ccc;
+          background:#fff;
+          cursor:pointer;
+          font-size:14px;">
+          🖨️ Imprimir página / Salvar em PDF
+        </button>
+        """,
+        height=60,
+    )
+
+
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
         st.session_state[f"{K_ESTUDANTE}_dados"] = None
         st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
         st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
+        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = None
         st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
 
     modo = st.radio(
@@ -442,6 +464,8 @@ with tabs[2]:
                         ex = GeminiCaseFromTextExtractor(model=modelo_caso)
                         parsed = ex.extract_or_ask(caso_txt)
 
+                        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = parsed
+
                         if parsed.get("status") == "NEED_MORE_INFO":
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = parsed.get("questions", "")
                             st.session_state[f"{K_ESTUDANTE}_dados"] = None
@@ -471,6 +495,25 @@ with tabs[2]:
         if st.session_state.get(f"{K_ESTUDANTE}_perguntas_caso"):
             st.markdown("### Perguntas do sistema (para completar o caso)")
             st.write(st.session_state[f"{K_ESTUDANTE}_perguntas_caso"])
+
+
+        # --- Resultado salvo da análise (não some ao avançar) ---
+        parsed_saved = st.session_state.get(f"{K_ESTUDANTE}_parsed_texto")
+        if parsed_saved:
+            st.markdown("### Resultado: Analisar caso (Gemini)")
+            if parsed_saved.get("status") == "NEED_MORE_INFO":
+                st.info("Faltam dados para estruturar o caso com segurança.")
+                st.write(parsed_saved.get("questions", ""))
+            else:
+                st.success("Caso estruturado (JSON) e relatório core preservados abaixo.")
+
+        # Mostra novamente o caso interpretado + relatório core se já existirem (para impressão)
+        if st.session_state.get(f"{K_ESTUDANTE}_dados"):
+            st.markdown("### Caso interpretado (interno)")
+            st.json(st.session_state[f"{K_ESTUDANTE}_dados"])
+
+            st.markdown("### Relatório (core / TIME)")
+            st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
     # --------- IMAGEM DO ESTUDANTE ---------
     st.info("Upload de imagem desativado temporariamente (NumPy / Python 3.14).")
