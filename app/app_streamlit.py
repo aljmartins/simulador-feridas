@@ -218,6 +218,7 @@ if "export_payload" not in st.session_state:
         "resposta_estudante": "",
         "plano_ideal": "",
         "feedback": "",
+        "images": [],
     }
 
 def _set_export_payload(**kwargs):
@@ -316,6 +317,7 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     resposta = ep.get("resposta_estudante") or ""
     plano_ideal = ep.get("plano_ideal") or ""
     feedback = ep.get("feedback") or ""
+    images = ep.get("images") or []  # lista de dicts: {name, bytes}
 
     if isinstance(caso, dict):
         caso_txt = "\n".join([f"{k}: {v}" for k, v in caso.items()])
@@ -334,6 +336,54 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         y = draw_block("Plano ideal (core / TIME):", plano_ideal, y)
     if str(feedback).strip():
         y = draw_block("Feedback (Gemini):", feedback, y)
+
+
+    # --- Imagens anexadas (para constar no relatório) ---
+    if images:
+        # título
+        if y < 4*cm:
+            y = _new_page()
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(2*cm, y, "Imagens anexadas")
+        y -= 0.7*cm
+
+        max_w = w - 4*cm
+        max_h = 7*cm  # altura máxima por imagem
+
+        for item in images[:2]:
+            try:
+                img_bytes = item.get("bytes") if isinstance(item, dict) else None
+                if not img_bytes:
+                    continue
+                img = ImageReader(BytesIO(img_bytes))
+
+                # quebra página se precisar
+                if y - max_h < 2*cm:
+                    y = _new_page()
+
+                c.drawImage(
+                    img,
+                    2*cm,
+                    y - max_h,
+                    width=max_w,
+                    height=max_h,
+                    preserveAspectRatio=True,
+                    mask='auto'
+                )
+
+                # legenda opcional
+                name = (item.get("name") if isinstance(item, dict) else "") or ""
+                if name:
+                    c.setFont("Helvetica", 8)
+                    c.drawString(2*cm, y - max_h - 0.3*cm, f"Arquivo: {name}")
+                    y -= (max_h + 0.9*cm)
+                else:
+                    y -= (max_h + 0.6*cm)
+
+                c.setFont("Helvetica", 10)
+            except Exception:
+                continue
+
 
     c.save()
     buf.seek(0)
@@ -436,9 +486,34 @@ with tabs[1]:
         st.markdown("### Descrição visual")
         st.write(st.session_state[f"{K_TREINO}_visual"])
 
-        # --------- IMAGEM SINTÉTICA (GEMINI) ---------
-        # DESATIVADA TEMPORARIAMENTE
-        st.info("Imagem sintética desativada temporariamente (crédito Gemini / NumPy / Python 3.14).")
+
+# --------- IMAGEM (Treino) ---------
+enable_img = st.toggle("Ativar imagem (treino) – teste", value=False, key=f"{K_TREINO}_enable_img")
+
+if enable_img:
+    # 1) tenta geração sintética (se existir no seu src/gemini_flow)
+    generated = False
+    try:
+        from src.gemini_flow import GeminiImageGenerator  # opcional: só funciona se você tiver essa classe
+        ig = GeminiImageGenerator(model=model_case)
+        img_bytes = ig.generate_image(scenario=case, visual_description=st.session_state[f"{K_TREINO}_visual"])
+        st.image(img_bytes, caption="Imagem sintética (Gemini)", use_container_width=True)
+        _set_export_payload(images=[{"name": "imagem_sintetica.png", "bytes": img_bytes}])
+        generated = True
+    except Exception:
+        pass
+
+    if not generated:
+        st.caption("Geração sintética não disponível no código atual. Você pode anexar uma imagem para constar no PDF (não é analisada).")
+        up = st.file_uploader(
+            "Anexar 1 imagem (opcional) – entra no PDF",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=False,
+            key=f"{K_TREINO}_img_upload",
+        )
+        if up is not None:
+            _set_export_payload(images=[{"name": up.name, "bytes": up.getvalue()}])
+            st.image(up, caption="Imagem anexada (treino)", use_container_width=True)
 
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
@@ -672,8 +747,24 @@ with tabs[2]:
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
-    # --------- IMAGEM DO ESTUDANTE ---------
-    st.info("Upload de imagem desativado temporariamente (NumPy / Python 3.14).")
+
+# --------- IMAGENS DO ESTUDANTE (somente para constar no PDF) ---------
+if modo == "Texto corrido":
+    imgs = st.file_uploader(
+        "Anexar 1–2 imagens (opcional) — entram no PDF",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"{K_ESTUDANTE}_imgs_pdf",
+    )
+    if imgs:
+        if len(imgs) > 2:
+            st.warning("Máximo de 2 imagens. Vou usar apenas as 2 primeiras.")
+            imgs = imgs[:2]
+        images_payload = [{"name": f.name, "bytes": f.getvalue()} for f in imgs]
+        _set_export_payload(images=images_payload)
+        st.caption("As imagens não são analisadas; ficam apenas no relatório PDF.")
+        for f in imgs:
+            st.image(f, caption=f.name, use_container_width=True)
 
     st.divider()
     st.subheader("Feedback robusto (Gemini)")
