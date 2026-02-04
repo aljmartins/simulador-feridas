@@ -60,6 +60,12 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
+from reportlab.lib.utils import ImageReader
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from reportlab.lib.utils import ImageReader
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 import streamlit as st
 
@@ -215,20 +221,62 @@ def _set_export_payload(**kwargs):
 
 
 def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
-    """Gera um PDF (bytes) a partir do export_payload, de forma robusta."""
+    """Gera um PDF (bytes) a partir do export_payload, com cabeçalho (logo + data/hora)."""
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
 
-    def _new_page(y):
-        c.showPage()
-        c.setFont("Helvetica", 10)
-        return h - 2*cm
+    tz = ZoneInfo("America/Sao_Paulo")
+    printed_at = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
 
-    def draw_title(text, y):
-        c.setFont("Helvetica-Bold", 14)
-        c.drawString(2*cm, y, text)
-        return y - 0.9*cm
+    # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
+    # Dica: um banner horizontal funciona melhor (ex: 1600x300)
+    PDF_BANNER = Path(__file__).resolve().parent / "assets" / "logo_pdf_banner.jpeg"
+    if not PDF_BANNER.exists():
+        # fallback para o logo já existente no app
+        PDF_BANNER = Path(__file__).resolve().parent / "assets" / "logo.all.jpeg"
+
+    def _draw_header():
+        """Cabeçalho em todas as páginas."""
+        top_y = h - 1.3*cm
+
+        # tenta desenhar o banner, se existir
+        if PDF_BANNER.exists():
+            try:
+                img = ImageReader(str(PDF_BANNER))
+                # banner com altura fixa e largura até a margem
+                max_w = w - 4*cm
+                banner_h = 2.0*cm
+                c.drawImage(
+                    img,
+                    2*cm,
+                    top_y - banner_h,
+                    width=max_w,
+                    height=banner_h,
+                    preserveAspectRatio=True,
+                    mask='auto'
+                )
+                y_after_banner = top_y - banner_h - 0.35*cm
+            except Exception:
+                y_after_banner = top_y - 0.2*cm
+        else:
+            y_after_banner = top_y - 0.2*cm
+
+        # título + timestamp
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2*cm, y_after_banner, "Simulador TIMERS – Relatório")
+        c.setFont("Helvetica", 9)
+        c.drawRightString(w - 2*cm, y_after_banner, f"Impresso em: {printed_at}")
+
+        # linha separadora
+        c.line(2*cm, y_after_banner - 0.25*cm, w - 2*cm, y_after_banner - 0.25*cm)
+
+        # y inicial do conteúdo (abaixo do cabeçalho)
+        return y_after_banner - 0.75*cm
+
+    def _new_page():
+        c.showPage()
+        return _draw_header()
 
     def draw_block(label, text, y):
         c.setFont("Helvetica-Bold", 11)
@@ -246,13 +294,13 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
             # Quebra linhas muito longas (simples e seguro)
             while len(ln) > 110:
                 if y < 2*cm:
-                    y = _new_page(y)
+                    y = _new_page()
                 c.drawString(2*cm, y, ln[:110])
                 ln = ln[110:]
                 y -= 0.45*cm
 
             if y < 2*cm:
-                y = _new_page(y)
+                y = _new_page()
             c.drawString(2*cm, y, ln if ln else " ")
             y -= 0.45*cm
 
@@ -270,8 +318,7 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     else:
         caso_txt = str(caso)
 
-    y = h - 2*cm
-    y = draw_title("Simulador TIMERS – Relatório", y)
+    y = _draw_header()
     y = draw_block("Fonte:", origem, y)
     y = draw_block("Caso:", caso_txt, y)
 
@@ -461,16 +508,18 @@ with tabs[2]:
             )
 
             # Abrir PDF em nova aba (evita impressão em branco / frame)
-            b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-            st.markdown(
-                f"""
-                <a href="data:application/pdf;base64,{b64}" target="_blank"
-                   style="text-decoration:none; font-weight:600;">
-                   🖨️ Abrir PDF em nova aba (e imprimir)
-                </a>
-                """,
-                unsafe_allow_html=True,
-            )
+            # Observação: o código abaixo foi desativado para evitar problemas com iframe/visualização.
+            # Se quiser habilitar, remova os comentários e certifique-se de que `b64` esteja definido:
+            # b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            # st.markdown(
+            #     f"""
+            #     <a href="data:application/pdf;base64,{b64}" target="_blank"
+            #        style="text-decoration:none; font-weight:600;">
+            #        🖨️ Abrir PDF em nova aba (e imprimir)
+            #     </a>
+            #     """,
+            #     unsafe_allow_html=True,
+            # )
 
 
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
