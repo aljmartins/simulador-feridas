@@ -438,15 +438,50 @@ with tabs[0]:
         st.text(rel)
         _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="")
 
+
 # ---------- TAB 2: Treino com Gemini ----------
 with tabs[1]:
     st.subheader("Treino: gerar caso via Gemini + resposta do estudante + feedback")
+
+    # Exportar PDF (também no modo Treino)
+    ep = st.session_state.get("export_payload", {})
+    tem_algo = any([
+        bool(ep.get("caso")),
+        bool(str(ep.get("plano_ideal", "")).strip()),
+        bool(str(ep.get("feedback", "")).strip()),
+        bool(str(ep.get("resposta_estudante", "")).strip()),
+        bool(str(ep.get("descricao_visual", "")).strip()),
+        bool(ep.get("images")),
+    ])
+
+    colp1, colp2 = st.columns([1, 2])
+    with colp1:
+        st.caption("Exportar")
+    with colp2:
+        if not tem_algo or (ep.get("origem") not in ["Treino (Gemini)"] and not str(ep.get("origem","")).startswith("Treino")):
+            st.info("Gere um caso (e opcionalmente imagem/feedback) nesta aba para liberar o PDF do treino.")
+        else:
+            pdf_bytes = _pdf_bytes_from_export_payload(ep)
+            eti = "caso"
+            caso = ep.get("caso")
+            if isinstance(caso, dict) and caso.get("etiologia"):
+                eti = str(caso.get("etiologia")).strip().lower()
+
+            st.download_button(
+                "📄 Baixar PDF do treino (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_treino_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_TREINO}_baixar_pdf_tab2",
+                use_container_width=True,
+            )
 
     if f"{K_TREINO}_case" not in st.session_state:
         st.session_state[f"{K_TREINO}_case"] = None
         st.session_state[f"{K_TREINO}_visual"] = ""
         st.session_state[f"{K_TREINO}_ideal"] = ""
         st.session_state[f"{K_TREINO}_feedback"] = ""
+        st.session_state[f"{K_TREINO}_img_bytes"] = b""
 
     colA, colB = st.columns(2)
     with colA:
@@ -472,49 +507,63 @@ with tabs[1]:
             sim = SimuladorLogica()
             ideal = sim.avaliar(out.scenario)
             st.session_state[f"{K_TREINO}_ideal"] = ideal
-            _set_export_payload(origem="Treino (Gemini)", caso=out.scenario, descricao_visual=out.visual_description, plano_ideal=ideal)
 
-            st.success("Caso gerado. Agora o estudante responde e você gera o feedback.")
+            # reseta feedback/imagem anteriores
+            st.session_state[f"{K_TREINO}_feedback"] = ""
+            st.session_state[f"{K_TREINO}_img_bytes"] = b""
+
+            _set_export_payload(
+                origem="Treino (Gemini)",
+                caso=out.scenario,
+                descricao_visual=out.visual_description,
+                plano_ideal=ideal,
+                feedback="",
+                resposta_estudante="",
+                images=[],
+            )
+
+            st.success("Caso gerado. Agora você pode (opcionalmente) gerar a imagem e depois gerar o feedback.")
         except Exception as e:
             st.error(f"Falhou ao gerar caso. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
-    case = st.session_state[f"{K_TREINO}_case"]
-    if case:
+    case = st.session_state.get(f"{K_TREINO}_case")
+    if not case:
+        st.info("Clique em **Gerar caso (Gemini)** para iniciar o treino.")
+    else:
         st.markdown("### Cenário (JSON)")
         st.json(case)
 
         st.markdown("### Descrição visual")
-        st.write(st.session_state[f"{K_TREINO}_visual"])
+        st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
 
-
-# --------- IMAGEM (Treino) ---------
-enable_img = st.toggle("Ativar imagem (treino) – teste", value=False, key=f"{K_TREINO}_enable_img")
-
-if enable_img:
-    # 1) tenta geração sintética (se existir no seu src/gemini_flow)
-    generated = False
-    try:
-        from src.gemini_flow import GeminiImageGenerator  # opcional: só funciona se você tiver essa classe
-        ig = GeminiImageGenerator(model=model_case)
-        img_bytes = ig.generate_image(scenario=case, visual_description=st.session_state[f"{K_TREINO}_visual"])
-        st.image(img_bytes, caption="Imagem sintética (Gemini)", use_container_width=True)
-        _set_export_payload(images=[{"name": "imagem_sintetica.png", "bytes": img_bytes}])
-        generated = True
-    except Exception:
-        pass
-
-    if not generated:
-        st.caption("Geração sintética não disponível no código atual. Você pode anexar uma imagem para constar no PDF (não é analisada).")
-        up = st.file_uploader(
-            "Anexar 1 imagem (opcional) – entra no PDF",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=False,
-            key=f"{K_TREINO}_img_upload",
+        # --------- IMAGEM (Treino) ---------
+        enable_img = st.toggle(
+            "Ativar imagem (treino) – gerar esboço rápido via Gemini",
+            value=False,
+            key=f"{K_TREINO}_enable_img",
         )
-        if up is not None:
-            _set_export_payload(images=[{"name": up.name, "bytes": up.getvalue()}])
-            st.image(up, caption="Imagem anexada (treino)", use_container_width=True)
 
+        if enable_img:
+            st.caption("A imagem é um esboço didático (não diagnóstico). Se sua conta/modelo não suportar imagem, o app vai avisar.")
+            if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
+                try:
+                    from src.gemini_flow import GeminiImageGenerator
+                    ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
+                    img_bytes = ig.generate_image(
+                        scenario=case,
+                        visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+                    )
+                    st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
+                    _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
+                    st.success("Imagem gerada e anexada ao PDF do treino.")
+                except Exception as e:
+                    st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
+
+            img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
+            if img_bytes_now:
+                st.image(img_bytes_now, caption="Imagem do caso (Gemini) – esboço didático", use_container_width=True)
+
+        st.divider()
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
             "Digite o plano do estudante (TIME + condutas específicas):",
@@ -526,7 +575,7 @@ if enable_img:
         with col1:
             if st.button("Mostrar plano ideal (core)", key=f"{K_TREINO}_mostrar_ideal"):
                 st.markdown("### Plano ideal (core)")
-                st.text(st.session_state[f"{K_TREINO}_ideal"])
+                st.text(st.session_state.get(f"{K_TREINO}_ideal", ""))
 
         with col2:
             if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback_btn"):
@@ -537,18 +586,27 @@ if enable_img:
                         fb = GeminiFeedbackGenerator(model=model_feedback)
                         feedback = fb.generate_feedback(
                             scenario=case,
-                            visual_description=st.session_state[f"{K_TREINO}_visual"],
+                            visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
                             student_plan=estudante_plano,
-                            ideal_plan=st.session_state[f"{K_TREINO}_ideal"],
+                            ideal_plan=st.session_state.get(f"{K_TREINO}_ideal", ""),
                         )
                         st.session_state[f"{K_TREINO}_feedback"] = feedback
-                        _set_export_payload(origem="Treino (Gemini)", caso=case, descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""), resposta_estudante=estudante_plano, plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""), feedback=feedback)
+
+                        # Atualiza payload do PDF do treino
+                        _set_export_payload(
+                            origem="Treino (Gemini)",
+                            caso=case,
+                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""),
+                            resposta_estudante=estudante_plano,
+                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""),
+                            feedback=feedback,
+                        )
+
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
-    else:
-        st.info("Clique em 'Gerar caso (Gemini)' para iniciar o treino.")
+
 
 # ---------- TAB 3: Estudante insere caso + feedback robusto ----------
 with tabs[2]:

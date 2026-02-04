@@ -124,6 +124,72 @@ from google.genai import types
 import base64
 
 
+class GeminiImageGenerator:
+    """
+    Gera um esboço didático (imagem) do caso de ferida crônica.
+    - Requer um modelo de geração de imagens (ex.: "imagen-3.0-generate-002").
+    - Usa o google-genai SDK. A disponibilidade depende do seu plano/conta/região.
+    Retorna bytes (PNG/JPEG) para uso direto no Streamlit e no PDF.
+    """
+
+    def __init__(self, model: str = "imagen-3.0-generate-002"):
+        load_dotenv()
+        self.client = genai.Client()
+        self.model = model
+
+    def generate_image(self, scenario: Dict[str, Any], visual_description: str) -> bytes:
+        prompt = (
+            "Crie um ESBOÇO DIDÁTICO, estilo ilustração simples/diagramática (não foto realista), "
+            "para representar uma ferida crônica em perna/pé conforme o caso abaixo. "
+            "Mostre apenas: localização aproximada, formato geral, coloração simplificada (granulação vs esfacelo/necrose), "
+            "bordas e exsudato de forma simbólica. Fundo branco, sem sangue explícito, sem elementos chocantes.\n\n"
+            "CENÁRIO (JSON):\n"
+            f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
+            "DESCRIÇÃO VISUAL:\n"
+            f"{visual_description}\n"
+        )
+
+        # O google-genai expõe geração de imagens em algumas versões via client.models.generate_images
+        gen_images = getattr(getattr(self.client, "models", None), "generate_images", None)
+        if callable(gen_images):
+            resp = gen_images(model=self.model, prompt=prompt)
+            # Tentativas de extrair bytes em formatos comuns
+            for attr_path in [
+                ("generated_images", 0, "image", "image_bytes"),
+                ("generated_images", 0, "image_bytes"),
+                ("images", 0, "image_bytes"),
+                ("images", 0, "bytes"),
+                ("data", 0),
+            ]:
+                try:
+                    obj = resp
+                    for p in attr_path:
+                        if isinstance(p, int):
+                            obj = obj[p]
+                        else:
+                            obj = getattr(obj, p)
+                    if isinstance(obj, (bytes, bytearray)) and obj:
+                        return bytes(obj)
+                except Exception:
+                    continue
+
+        # Fallback: algumas versões retornam base64 em campos conhecidos
+        for key in ["image_base64", "b64_json", "base64_data"]:
+            try:
+                val = getattr(resp, key)  # type: ignore[name-defined]
+                if isinstance(val, str) and val.strip():
+                    return base64.b64decode(val)
+            except Exception:
+                pass
+
+        raise RuntimeError(
+            "Geração de imagem não disponível neste ambiente/conta/modelo. "
+            "Verifique se o modelo de imagem está habilitado (ex.: imagen-3.0-generate-002) "
+            "e se o google-genai SDK/credenciais suportam generate_images."
+        )
+
+
+
 # ==============================
 # IMAGEM (DESATIVADA TEMPORARIAMENTE)
 # Motivo: crédito Gemini / NumPy / Python 3.14
