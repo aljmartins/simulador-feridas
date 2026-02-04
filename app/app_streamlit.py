@@ -55,6 +55,11 @@ from dotenv import load_dotenv
 LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
 # mostra no topo
 import base64
+
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import cm
 from pathlib import Path
 import streamlit as st
 
@@ -93,24 +98,27 @@ st.markdown(
 import streamlit as st
 import os
 
-def check_password():
-    if "auth" not in st.session_state:
-        st.session_state.auth = False
-
-    if not st.session_state.auth:
-        st.title("Acesso restrito")
-        pwd = st.text_input("Senha", type="password")
-
-        if st.button("Entrar"):
-            if pwd == os.getenv("APP_PASSWORD"):
-                st.session_state.auth = True
-                st.rerun()
-            else:
-                st.error("Senha incorreta")
-
-        st.stop()
-
-check_password()
+# ==============================
+# CONTROLE DE ACESSO (DESATIVADO)
+# ==============================
+# def check_password():
+#     if "auth" not in st.session_state:
+#         st.session_state.auth = False
+#
+#     if not st.session_state.auth:
+#         st.title("Acesso restrito")
+#         pwd = st.text_input("Senha", type="password")
+#
+#         if st.button("Entrar"):
+#             if pwd == os.getenv("APP_PASSWORD"):
+#                 st.session_state.auth = True
+#                 st.rerun()
+#             else:
+#                 st.error("Senha incorreta")
+#
+#         st.stop()
+#
+# check_password()
 
 st.divider()  # opcional: uma linha separando
 
@@ -123,7 +131,7 @@ from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator
 
 load_dotenv()
 
-st.set_page_config(page_title="Simulador TIMERS", layout="centered")
+# st.set_page_config(page_title="Simulador TIMERS", layout="centered")  # já definido no topo
 st.markdown(
     "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
@@ -204,6 +212,82 @@ if "export_payload" not in st.session_state:
 
 def _set_export_payload(**kwargs):
     st.session_state["export_payload"].update({k: v for k, v in kwargs.items() if v is not None})
+
+
+def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
+    """Gera um PDF (bytes) a partir do export_payload, de forma robusta."""
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+
+    def _new_page(y):
+        c.showPage()
+        c.setFont("Helvetica", 10)
+        return h - 2*cm
+
+    def draw_title(text, y):
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(2*cm, y, text)
+        return y - 0.9*cm
+
+    def draw_block(label, text, y):
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(2*cm, y, label)
+        y -= 0.6*cm
+        c.setFont("Helvetica", 10)
+
+        raw = (text or "—")
+        raw = str(raw).replace("\r\n", "\n").replace("\r", "\n")
+        lines = raw.split("\n")
+
+        for ln in lines:
+            ln = ln.rstrip()
+
+            # Quebra linhas muito longas (simples e seguro)
+            while len(ln) > 110:
+                if y < 2*cm:
+                    y = _new_page(y)
+                c.drawString(2*cm, y, ln[:110])
+                ln = ln[110:]
+                y -= 0.45*cm
+
+            if y < 2*cm:
+                y = _new_page(y)
+            c.drawString(2*cm, y, ln if ln else " ")
+            y -= 0.45*cm
+
+        return y - 0.35*cm
+
+    origem = ep.get("origem") or "—"
+    caso = ep.get("caso") or {}
+    descricao_visual = ep.get("descricao_visual") or ""
+    resposta = ep.get("resposta_estudante") or ""
+    plano_ideal = ep.get("plano_ideal") or ""
+    feedback = ep.get("feedback") or ""
+
+    if isinstance(caso, dict):
+        caso_txt = "\n".join([f"{k}: {v}" for k, v in caso.items()])
+    else:
+        caso_txt = str(caso)
+
+    y = h - 2*cm
+    y = draw_title("Simulador TIMERS – Relatório", y)
+    y = draw_block("Fonte:", origem, y)
+    y = draw_block("Caso:", caso_txt, y)
+
+    if str(descricao_visual).strip():
+        y = draw_block("Descrição visual:", descricao_visual, y)
+    if str(resposta).strip():
+        y = draw_block("Resposta do estudante:", resposta, y)
+    if str(plano_ideal).strip():
+        y = draw_block("Plano ideal (core / TIME):", plano_ideal, y)
+    if str(feedback).strip():
+        y = draw_block("Feedback (Gemini):", feedback, y)
+
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
+
 
 
 tabs = st.tabs(["Simulador (manual)", "Treino (Gemini)", "Estudante: inserir caso"])
@@ -344,25 +428,49 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Estudante: inserir caso clínico")
 
+    # Exportar PDF (robusto): gera arquivo e o usuário imprime pelo leitor de PDF (evita página em branco do iframe)
+    ep = st.session_state.get("export_payload", {})
+    tem_algo = any([
+        bool(ep.get("caso")),
+        bool(str(ep.get("plano_ideal", "")).strip()),
+        bool(str(ep.get("feedback", "")).strip()),
+        bool(str(ep.get("resposta_estudante", "")).strip()),
+        bool(str(ep.get("descricao_visual", "")).strip()),
+    ])
 
-    # Botão simples para impressão via navegador (Ctrl+P), mantendo o relatório completo na tela
-    st.components.v1.html(
-        """
-        <script>
-          function printPage(){ window.print(); }
-        </script>
-        <button onclick="printPage()" style="
-          padding:10px 14px;
-          border-radius:10px;
-          border:1px solid #ccc;
-          background:#fff;
-          cursor:pointer;
-          font-size:14px;">
-          🖨️ Imprimir página / Salvar em PDF
-        </button>
-        """,
-        height=60,
-    )
+    colp1, colp2 = st.columns([1, 2])
+    with colp1:
+        st.caption("Exportar")
+    with colp2:
+        if not tem_algo:
+            st.info("Gere algum conteúdo (caso/relatório/feedback) para liberar o PDF.")
+        else:
+            pdf_bytes = _pdf_bytes_from_export_payload(ep)
+            eti = "caso"
+            caso = ep.get("caso")
+            if isinstance(caso, dict) and caso.get("etiologia"):
+                eti = str(caso.get("etiologia")).strip().lower()
+
+            st.download_button(
+                "📄 Baixar PDF (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_timers_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_ESTUDANTE}_baixar_pdf_tab3",
+                use_container_width=True,
+            )
+
+            # Abrir PDF em nova aba (evita impressão em branco / frame)
+            b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            st.markdown(
+                f"""
+                <a href="data:application/pdf;base64,{b64}" target="_blank"
+                   style="text-decoration:none; font-weight:600;">
+                   🖨️ Abrir PDF em nova aba (e imprimir)
+                </a>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
@@ -479,11 +587,6 @@ with tabs[2]:
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
 
                             st.success("Caso entendido. Relatório gerado pelo core.")
-                            st.markdown("### Caso interpretado (interno)")
-                            st.json(dados)
-
-                            st.markdown("### Relatório (core / TIME)")
-                            st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
                             _set_export_payload(
                                 origem="Estudante: inserir caso (texto corrido)",
@@ -586,8 +689,7 @@ with tabs[2]:
             st.write(feedback_salvo)
 
         if st.session_state.get(f"{K_ESTUDANTE}_show_ideal"):
-            st.markdown("### Plano ideal (core)")
-            st.text(st.session_state.get(f"{K_ESTUDANTE}_ideal", ""))
+            st.info("Plano ideal já está no relatório (acima).")
     # ---------- EXPORTAR RELATÓRIO (PDF) ----------
     # st.divider()
     # st.subheader("Exportar relatório (PDF)")

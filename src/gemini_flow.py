@@ -92,34 +92,31 @@ class GeminiFeedbackGenerator:
         ideal_plan: str,
     ) -> str:
         prompt = (
-    "Você é um professor exigente e justo. Antes de dar feedback, você deve checar se o texto do estudante "
-    "tem informações mínimas para ser avaliado com segurança.\n\n"
-    "Se o plano do estudante estiver incompleto/raso (ex.: não cobre TIME, não considera etiologia, não aborda segurança, "
-    "não descreve condutas), você NÃO deve avaliar. Você deve responder EXATAMENTE assim:\n"
-    "PRECISO DE MAIS DADOS:\n"
-    "- pergunta 1\n"
-    "- pergunta 2\n"
-    "(no máximo 8 perguntas)\n\n"
-    "Se estiver completo o suficiente, então faça feedback pedagógico.\n\n"
-    "Dados do cenário da ferida (JSON):\n"
-    f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
-    "Descrição visual detalhada da ferida:\n"
-    f"{visual_description}\n\n"
-    "Proposta de tratamento do estudante:\n"
-    f"{student_plan}\n\n"
-    "Plano de tratamento ideal (gerado pelo simulador):\n"
-    f"{ideal_plan}\n\n"
-    "Quando for avaliar, compare com o plano ideal, focando em T.I.M.E. (Tecido, Infecção, Umidade, Bordas) "
-    "e condutas específicas da etiologia.\n\n"
-    "Formato do feedback (somente se completo):\n"
-    "1) Pontos fortes\n"
-    "2) Lacunas/ajustes\n"
-    "3) Riscos e segurança do paciente\n"
-    "4) Próximo passo (o que o estudante deve estudar/fazer)\n"
-    "Use linguagem clara, encorajadora e objetiva."
-)
+            "Você é um professor clínico exigente, justo e pedagógico.\n\n"
+            "REGRA IMPORTANTE:\n"
+            "- Sempre forneça feedback ao estudante, mesmo que o plano esteja incompleto ou superficial.\n"
+            "- NÃO bloqueie a avaliação por falta de dados.\n"
+            "- Se faltar informação relevante, aponte isso como lacuna no feedback.\n\n"
+            "Dados do cenário da ferida (JSON):\n"
+            f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
+            "Descrição visual detalhada da ferida:\n"
+            f"{visual_description}\n\n"
+            "Proposta de tratamento do estudante:\n"
+            f"{student_plan}\n\n"
+            "Plano de tratamento ideal (gerado pelo simulador):\n"
+            f"{ideal_plan}\n\n"
+            "Compare a proposta do estudante com o plano ideal, considerando T.I.M.E. "
+            "(Tecido, Infecção, Umidade, Bordas) e a etiologia da ferida.\n\n"
+            "Se o estudante não abordar algum desses pontos, registre como lacuna pedagógica, "
+            "sem interromper a avaliação.\n\n"
+            "Formato do feedback:\n"
+            "1) Pontos fortes do plano apresentado\n"
+            "2) Aspectos ausentes ou pouco desenvolvidos\n"
+            "3) Riscos potenciais e considerações de segurança\n"
+            "4) Sugestões práticas de melhoria\n\n"
+            "Use linguagem clara, direta, encorajadora e tecnicamente correta."
+        )
 
-      
         resp = self.client.models.generate_content(model=self.model, contents=prompt)
         return (resp.text or "").strip()
 
