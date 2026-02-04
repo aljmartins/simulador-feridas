@@ -1,4 +1,7 @@
-streamlit>=1.30
-python-dotenv>=1.0
-google-genai>=1.0.0
-# reportlab
+streamlit
+python-dotenv
+google-genai
+reportlab
+#streamlit>=1.30
+#python-dotenv>=1.0
+#google-genai>=1.0.0
