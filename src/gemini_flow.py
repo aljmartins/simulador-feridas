@@ -124,72 +124,6 @@ from google.genai import types
 import base64
 
 
-class GeminiImageGenerator:
-    """
-    Gera um esboço didático (imagem) do caso de ferida crônica.
-    - Requer um modelo de geração de imagens (ex.: "imagen-3.0-generate-002").
-    - Usa o google-genai SDK. A disponibilidade depende do seu plano/conta/região.
-    Retorna bytes (PNG/JPEG) para uso direto no Streamlit e no PDF.
-    """
-
-    def __init__(self, model: str = "imagen-3.0-generate-002"):
-        load_dotenv()
-        self.client = genai.Client()
-        self.model = model
-
-    def generate_image(self, scenario: Dict[str, Any], visual_description: str) -> bytes:
-        prompt = (
-            "Crie um ESBOÇO DIDÁTICO, estilo ilustração simples/diagramática (não foto realista), "
-            "para representar uma ferida crônica em perna/pé conforme o caso abaixo. "
-            "Mostre apenas: localização aproximada, formato geral, coloração simplificada (granulação vs esfacelo/necrose), "
-            "bordas e exsudato de forma simbólica. Fundo branco, sem sangue explícito, sem elementos chocantes.\n\n"
-            "CENÁRIO (JSON):\n"
-            f"{json.dumps(scenario, indent=2, ensure_ascii=False)}\n\n"
-            "DESCRIÇÃO VISUAL:\n"
-            f"{visual_description}\n"
-        )
-
-        # O google-genai expõe geração de imagens em algumas versões via client.models.generate_images
-        gen_images = getattr(getattr(self.client, "models", None), "generate_images", None)
-        if callable(gen_images):
-            resp = gen_images(model=self.model, prompt=prompt)
-            # Tentativas de extrair bytes em formatos comuns
-            for attr_path in [
-                ("generated_images", 0, "image", "image_bytes"),
-                ("generated_images", 0, "image_bytes"),
-                ("images", 0, "image_bytes"),
-                ("images", 0, "bytes"),
-                ("data", 0),
-            ]:
-                try:
-                    obj = resp
-                    for p in attr_path:
-                        if isinstance(p, int):
-                            obj = obj[p]
-                        else:
-                            obj = getattr(obj, p)
-                    if isinstance(obj, (bytes, bytearray)) and obj:
-                        return bytes(obj)
-                except Exception:
-                    continue
-
-        # Fallback: algumas versões retornam base64 em campos conhecidos
-        for key in ["image_base64", "b64_json", "base64_data"]:
-            try:
-                val = getattr(resp, key)  # type: ignore[name-defined]
-                if isinstance(val, str) and val.strip():
-                    return base64.b64decode(val)
-            except Exception:
-                pass
-
-        raise RuntimeError(
-            "Geração de imagem não disponível neste ambiente/conta/modelo. "
-            "Verifique se o modelo de imagem está habilitado (ex.: imagen-3.0-generate-002) "
-            "e se o google-genai SDK/credenciais suportam generate_images."
-        )
-
-
-
 # ==============================
 # IMAGEM (DESATIVADA TEMPORARIAMENTE)
 # Motivo: crédito Gemini / NumPy / Python 3.14
@@ -252,3 +186,91 @@ class GeminiCaseFromTextExtractor:
 
 
 # FIM TRECHO ADICIONADO
+
+
+# ==============================
+# IMAGEM (GERAÇÃO DE ESBOÇO)
+# - NÃO usa upload do usuário
+# - gera uma imagem simples (didática) a partir de um prompt
+# ==============================
+
+class GeminiImageGenerator:
+    """Gera uma imagem (esboço didático) via modelos de imagem.
+
+    Retorna bytes PNG/JPEG (dependendo do modelo). O app pode exibir e embutir no PDF.
+    A implementação tenta múltiplas rotas do SDK para ficar resiliente a versões.
+    """
+
+    def __init__(self, model: str = "imagen-3.0-generate-002"):
+        load_dotenv()
+        self.client = genai.Client()
+        self.model = model
+
+    def generate_image_bytes(self, prompt: str) -> bytes:
+        # Tentativa 1: client.models.generate_images (algumas versões)
+        if hasattr(self.client, "models") and hasattr(self.client.models, "generate_images"):
+            try:
+                resp = self.client.models.generate_images(
+                    model=self.model,
+                    prompt=prompt,
+                    config=types.GenerateImagesConfig(number_of_images=1) if hasattr(types, "GenerateImagesConfig") else None,
+                )
+                # Resp pode trazer imagens em resp.generated_images ou resp.images
+                imgs = None
+                for attr in ("generated_images", "images", "data"):
+                    if hasattr(resp, attr):
+                        imgs = getattr(resp, attr)
+                        break
+                if imgs:
+                    item = imgs[0]
+                    # item pode ter .image_bytes, .bytes, .data (base64)
+                    for a in ("image_bytes", "bytes", "data"):
+                        if hasattr(item, a) and getattr(item, a) is not None:
+                            v = getattr(item, a)
+                            if isinstance(v, (bytes, bytearray)):
+                                return bytes(v)
+                            if isinstance(v, str):
+                                import base64
+                                return base64.b64decode(v)
+                raise RuntimeError("Resposta de imagem inesperada (generate_images).")
+            except Exception as e:
+                # cai para a próxima tentativa
+                last_err = e
+        else:
+            last_err = None
+
+        # Tentativa 2: alguns SDKs expõem client.images.generate
+        if hasattr(self.client, "images") and hasattr(self.client.images, "generate"):
+            try:
+                resp = self.client.images.generate(model=self.model, prompt=prompt)
+                # resp pode ter bytes/base64
+                if hasattr(resp, "images") and resp.images:
+                    item = resp.images[0]
+                    if hasattr(item, "image_bytes") and item.image_bytes is not None:
+                        return bytes(item.image_bytes)
+                    if hasattr(item, "data") and isinstance(item.data, str):
+                        import base64
+                        return base64.b64decode(item.data)
+                raise RuntimeError("Resposta de imagem inesperada (images.generate).")
+            except Exception as e:
+                last_err = e
+
+        # Tentativa 3: fallback — não suportado
+        msg = "SDK/modelo não suportou geração de imagem neste ambiente."
+        if last_err:
+            msg += f" Detalhe: {last_err}"
+        raise RuntimeError(msg)
+
+    def build_prompt_from_case(self, scenario: dict, visual_description: str) -> str:
+        # Prompt curto e seguro: 'esboço' didático, sem gore
+        return (
+            "Crie um esboço didático e simples (estilo ilustração clínica neutra) de uma ferida crônica "+
+            "para fins educacionais. Não mostre sangue excessivo nem detalhes gráficos. "
+            "Use fundo claro. "
+            "Baseie-se nesta descrição: "
+            f"{visual_description}" 
+        )
+
+    def generate_case_sketch(self, scenario: dict, visual_description: str) -> bytes:
+        prompt = self.build_prompt_from_case(scenario, visual_description)
+        return self.generate_image_bytes(prompt)
