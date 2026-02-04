@@ -536,32 +536,34 @@ with tabs[1]:
         st.markdown("### Descrição visual")
         st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
 
-        # --------- IMAGEM (Treino) ---------
-        enable_img = st.toggle(
-            "Ativar imagem (treino) – gerar esboço rápido via Gemini",
-            value=False,
-            key=f"{K_TREINO}_enable_img",
-        )
-
-        if enable_img:
-            st.caption("A imagem é um esboço didático (não diagnóstico). Se sua conta/modelo não suportar imagem, o app vai avisar.")
-            if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
-                try:
-                    from src.gemini_flow import GeminiImageGenerator
-                    ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
-                    img_bytes = ig.generate_image(
-                        scenario=case,
-                        visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
-                    )
-                    st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
-                    _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
-                    st.success("Imagem gerada e anexada ao PDF do treino.")
-                except Exception as e:
-                    st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
-
-            img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
-            if img_bytes_now:
-                st.image(img_bytes_now, caption="Imagem do caso (Gemini) – esboço didático", use_container_width=True)
+        # --------- IMAGEM (Treino) (DESATIVADA) ---------
+        # A geração de esboço (imagem) via Gemini foi desativada para evitar confusão de versão/SDK.
+        # Mantido apenas como referência (como no botão "abrir PDF em nova aba").
+        #
+        # enable_img = st.toggle(
+        #     "Ativar imagem (treino) – gerar esboço rápido via Gemini",
+        #     value=False,
+        #     key=f"{K_TREINO}_enable_img",
+        # )
+        #
+        # if enable_img:
+        #     st.caption("A imagem é um esboço didático (não diagnóstico).")
+        #     if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
+        #         try:
+        #             from src.gemini_flow import GeminiImageGenerator
+        #             ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
+        #             img_bytes = ig.generate_sketch_png(
+        #                 visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+        #             )
+        #             st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
+        #             _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
+        #             st.success("Imagem gerada e anexada ao PDF do treino.")
+        #         except Exception as e:
+        #             st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
+        #
+        #     img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
+        #     if img_bytes_now:
+        #         st.image(img_bytes_now, caption="Imagem do caso – esboço didático", use_container_width=True)
 
         st.divider()
         st.markdown("### Resposta do estudante")
