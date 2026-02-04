@@ -51,8 +51,13 @@ sys.path.append(str(ROOT))
 
 from dotenv import load_dotenv
 
+# Caminhos de imagens (separa web x PDF)
+ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+LOGO_WEB = ASSETS_DIR / "logo.all.jpeg"
+LOGO_PDF_BANNER = ASSETS_DIR / "logo_pdf_banner.png"  # banner horizontal para o PDF
+
 # caminho relativo (robusto)
-LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
+LOGO = LOGO_WEB
 # mostra no topo
 import base64
 
@@ -69,7 +74,6 @@ from zoneinfo import ZoneInfo
 from pathlib import Path
 import streamlit as st
 
-LOGO = Path(__file__).resolve().parent / "assets" / "logo.all.jpeg"
 
 data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
 st.markdown(
@@ -231,10 +235,10 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
 
     # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
     # Dica: um banner horizontal funciona melhor (ex: 1600x300)
-    PDF_BANNER = Path(__file__).resolve().parent / "assets" / "logo_pdf_banner.jpeg"
+    PDF_BANNER = LOGO_PDF_BANNER
     if not PDF_BANNER.exists():
         # fallback para o logo já existente no app
-        PDF_BANNER = Path(__file__).resolve().parent / "assets" / "logo.all.jpeg"
+        PDF_BANNER = LOGO_WEB
 
     def _draw_header():
         """Cabeçalho em todas as páginas."""
