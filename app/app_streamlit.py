@@ -125,6 +125,18 @@ from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator
 
 load_dotenv()
 
+# ==============================
+# AVISO DE CONFIGURAÇÃO (GEMINI)
+# ==============================
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    st.warning(
+        "⚠️ Funções com IA (Gemini) estão indisponíveis.\n\n"
+        "A chave de acesso (GEMINI_API_KEY) não está configurada no ambiente/Secrets. "
+        "Você ainda pode usar o simulador manual e gerar PDFs."
+    )
+
+
 # st.set_page_config(page_title="Simulador TIMERS", layout="centered")  # já definido no topo
 st.markdown(
     "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
