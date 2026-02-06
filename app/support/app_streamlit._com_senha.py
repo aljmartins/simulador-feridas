@@ -51,13 +51,8 @@ sys.path.append(str(ROOT))
 
 from dotenv import load_dotenv
 
-# Caminhos de imagens (separa web x PDF)
-ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-LOGO_WEB = ASSETS_DIR / "logo.all.jpeg"
-LOGO_PDF_BANNER = ASSETS_DIR / "logo_pdf_banner.png"  # banner horizontal para o PDF
-
 # caminho relativo (robusto)
-LOGO = LOGO_WEB
+LOGO = Path(__file__).parent / "assets" / "logo.all.jpeg"
 # mostra no topo
 import base64
 
@@ -65,21 +60,16 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
-from reportlab.lib.utils import ImageReader
-from datetime import datetime
-from zoneinfo import ZoneInfo
-from reportlab.lib.utils import ImageReader
-from datetime import datetime
-from zoneinfo import ZoneInfo
 from pathlib import Path
 import streamlit as st
 
+LOGO = Path(__file__).resolve().parent / "assets" / "logo.all.jpeg"
 
 data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
 st.markdown(
     f"""
     <div style="text-align:center;">
-      <img src="data:image/jpeg;base64,{data}" style="max-width:100%; height:auto;" />
+      <img src="data:image/jpeg;base64,{data}" style="height:160px; width:auto;" />
     </div>
     """,
     unsafe_allow_html=True
@@ -88,31 +78,44 @@ st.markdown(
 st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
 
 
+# INSERE Imagem
+LOGO = Path(__file__).parent / "assets" / "imagem.jpeg"
+IMAGEM = Path(__file__).resolve().parent / "assets" / "imagem.jpeg"
+data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
+st.markdown(
+    f"""
+    <div style="text-align:center;">
+      <img src="data:image/jpeg;base64,{data}" style="height:120px; width:auto;" />
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# INSERE Imagem Fim
+
+
 
 import streamlit as st
 import os
 
-# ==============================
-# CONTROLE DE ACESSO (DESATIVADO)
-# ==============================
-# def check_password():
-#     if "auth" not in st.session_state:
-#         st.session_state.auth = False
-#
-#     if not st.session_state.auth:
-#         st.title("Acesso restrito")
-#         pwd = st.text_input("Senha", type="password")
-#
-#         if st.button("Entrar"):
-#             if pwd == os.getenv("APP_PASSWORD"):
-#                 st.session_state.auth = True
-#                 st.rerun()
-#             else:
-#                 st.error("Senha incorreta")
-#
-#         st.stop()
-#
-# check_password()
+def check_password():
+    if "auth" not in st.session_state:
+        st.session_state.auth = False
+
+    if not st.session_state.auth:
+        st.title("Acesso restrito")
+        pwd = st.text_input("Senha", type="password")
+
+        if st.button("Entrar"):
+            if pwd == os.getenv("APP_PASSWORD"):
+                st.session_state.auth = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta")
+
+        st.stop()
+
+check_password()
 
 st.divider()  # opcional: uma linha separando
 
@@ -130,52 +133,6 @@ st.markdown(
     "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
 )
-
-# ===== Caminhos robustos para assets (todos em app/assets) =====
-APP_DIR = Path(__file__).resolve().parent        # .../app
-ASSETS_DIR = APP_DIR / "assets"                  # .../app/assets
-
-def _img_to_b64(path: Path) -> str:
-    """Lê um arquivo de imagem e devolve base64. Se não existir, devolve string vazia (não quebra o app)."""
-    try:
-        if path.exists():
-            return base64.b64encode(path.read_bytes()).decode("utf-8")
-    except Exception:
-        pass
-    return ""
-
-insta_path = ASSETS_DIR / "instagram.png"
-enf_path   = ASSETS_DIR / "logo.enfermagem.png"
-
-insta_b64 = _img_to_b64(insta_path)
-enf_b64   = _img_to_b64(enf_path)
-
-st.markdown(
-    f"""
-    <div style="display:flex; align-items:center; gap:12px; margin-top:-10px; margin-bottom:12px;">
-        <img src="data:image/png;base64,{insta_b64}" width="24">
-        <a href="https://www.instagram.com/amorapele_ufpel/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           Amor à Pele
-        </a>
-        <span>|</span>
-        <a href="https://www.instagram.com/g10petsaude/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           PET G10
-        </a>
-        <span>|</span>
-        <img src="data:image/png;base64,{enf_b64}" width="24">
-        <a href="https://wp.ufpel.edu.br/fen/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           Faculdade de Enfermagem – UFPel
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-
 
 
 # ---------- SIDEBAR: Exportar PDF (global) ----------
@@ -248,7 +205,6 @@ if "export_payload" not in st.session_state:
         "resposta_estudante": "",
         "plano_ideal": "",
         "feedback": "",
-        "images": [],
     }
 
 def _set_export_payload(**kwargs):
@@ -256,73 +212,20 @@ def _set_export_payload(**kwargs):
 
 
 def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
-    """Gera um PDF (bytes) a partir do export_payload, com cabeçalho (logo + data/hora)."""
+    """Gera um PDF (bytes) a partir do export_payload, de forma robusta."""
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     w, h = A4
 
-    tz = ZoneInfo("America/Sao_Paulo")
-    printed_at = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
-
-    FOOTER_TEXT = "PET G10 UFPel - Telemonitoramento de Feridas Crônicas"
-
-
-    # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
-    # Dica: um banner horizontal funciona melhor (ex: 1600x300)
-    PDF_BANNER = LOGO_PDF_BANNER
-    if not PDF_BANNER.exists():
-        # fallback para o logo já existente no app
-        PDF_BANNER = LOGO_WEB
-
-    def _draw_footer():
-        """Rodapé em todas as páginas (texto + número da página no canto inferior direito)."""
-        y_footer = 1.2*cm
-        c.setFont("Helvetica", 8)
-        c.drawString(2*cm, y_footer, FOOTER_TEXT)
-        c.drawRightString(w - 2*cm, y_footer, f"Página {c.getPageNumber()}")
-
-    def _draw_header():
-        """Cabeçalho em todas as páginas."""
-        top_y = h - 1.3*cm
-
-        # tenta desenhar o banner, se existir
-        if PDF_BANNER.exists():
-            try:
-                img = ImageReader(str(PDF_BANNER))
-                # banner com altura fixa e largura até a margem
-                max_w = w - 4*cm
-                banner_h = 2.0*cm
-                c.drawImage(
-                    img,
-                    2*cm,
-                    top_y - banner_h,
-                    width=max_w,
-                    height=banner_h,
-                    preserveAspectRatio=True,
-                    mask='auto'
-                )
-                y_after_banner = top_y - banner_h - 0.35*cm
-            except Exception:
-                y_after_banner = top_y - 0.2*cm
-        else:
-            y_after_banner = top_y - 0.2*cm
-
-        # título + timestamp
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(2*cm, y_after_banner, "Simulador TIMERS – Relatório")
-        c.setFont("Helvetica", 9)
-        c.drawRightString(w - 2*cm, y_after_banner, f"Impresso em: {printed_at}")
-
-        # linha separadora
-        c.line(2*cm, y_after_banner - 0.25*cm, w - 2*cm, y_after_banner - 0.25*cm)
-
-        # y inicial do conteúdo (abaixo do cabeçalho)
-        return y_after_banner - 0.75*cm
-
-    def _new_page():
-        _draw_footer()
+    def _new_page(y):
         c.showPage()
-        return _draw_header()
+        c.setFont("Helvetica", 10)
+        return h - 2*cm
+
+    def draw_title(text, y):
+        c.setFont("Helvetica-Bold", 14)
+        c.drawString(2*cm, y, text)
+        return y - 0.9*cm
 
     def draw_block(label, text, y):
         c.setFont("Helvetica-Bold", 11)
@@ -340,13 +243,13 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
             # Quebra linhas muito longas (simples e seguro)
             while len(ln) > 110:
                 if y < 2*cm:
-                    y = _new_page()
+                    y = _new_page(y)
                 c.drawString(2*cm, y, ln[:110])
                 ln = ln[110:]
                 y -= 0.45*cm
 
             if y < 2*cm:
-                y = _new_page()
+                y = _new_page(y)
             c.drawString(2*cm, y, ln if ln else " ")
             y -= 0.45*cm
 
@@ -358,14 +261,14 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     resposta = ep.get("resposta_estudante") or ""
     plano_ideal = ep.get("plano_ideal") or ""
     feedback = ep.get("feedback") or ""
-    images = ep.get("images") or []  # lista de dicts: {name, bytes}
 
     if isinstance(caso, dict):
         caso_txt = "\n".join([f"{k}: {v}" for k, v in caso.items()])
     else:
         caso_txt = str(caso)
 
-    y = _draw_header()
+    y = h - 2*cm
+    y = draw_title("Simulador TIMERS – Relatório", y)
     y = draw_block("Fonte:", origem, y)
     y = draw_block("Caso:", caso_txt, y)
 
@@ -378,55 +281,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     if str(feedback).strip():
         y = draw_block("Feedback (Gemini):", feedback, y)
 
-
-    # --- Imagens anexadas (para constar no relatório) ---
-    if images:
-        # título
-        if y < 4*cm:
-            y = _new_page()
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(2*cm, y, "Imagens anexadas")
-        y -= 0.7*cm
-
-        max_w = w - 4*cm
-        max_h = 7*cm  # altura máxima por imagem
-
-        for item in images[:2]:
-            try:
-                img_bytes = item.get("bytes") if isinstance(item, dict) else None
-                if not img_bytes:
-                    continue
-                img = ImageReader(BytesIO(img_bytes))
-
-                # quebra página se precisar
-                if y - max_h < 2*cm:
-                    y = _new_page()
-
-                c.drawImage(
-                    img,
-                    2*cm,
-                    y - max_h,
-                    width=max_w,
-                    height=max_h,
-                    preserveAspectRatio=True,
-                    mask='auto'
-                )
-
-                # legenda opcional
-                name = (item.get("name") if isinstance(item, dict) else "") or ""
-                if name:
-                    c.setFont("Helvetica", 8)
-                    c.drawString(2*cm, y - max_h - 0.3*cm, f"Arquivo: {name}")
-                    y -= (max_h + 0.9*cm)
-                else:
-                    y -= (max_h + 0.6*cm)
-
-                c.setFont("Helvetica", 10)
-            except Exception:
-                continue
-
-
-    _draw_footer()
     c.save()
     buf.seek(0)
     return buf.getvalue()
@@ -480,50 +334,15 @@ with tabs[0]:
         st.text(rel)
         _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="")
 
-
 # ---------- TAB 2: Treino com Gemini ----------
 with tabs[1]:
     st.subheader("Treino: gerar caso via Gemini + resposta do estudante + feedback")
-
-    # Exportar PDF (também no modo Treino)
-    ep = st.session_state.get("export_payload", {})
-    tem_algo = any([
-        bool(ep.get("caso")),
-        bool(str(ep.get("plano_ideal", "")).strip()),
-        bool(str(ep.get("feedback", "")).strip()),
-        bool(str(ep.get("resposta_estudante", "")).strip()),
-        bool(str(ep.get("descricao_visual", "")).strip()),
-        bool(ep.get("images")),
-    ])
-
-    colp1, colp2 = st.columns([1, 2])
-    with colp1:
-        st.caption("Exportar")
-    with colp2:
-        if not tem_algo or (ep.get("origem") not in ["Treino (Gemini)"] and not str(ep.get("origem","")).startswith("Treino")):
-            st.info("Gere um caso (e opcionalmente imagem/feedback) nesta aba para liberar o PDF do treino.")
-        else:
-            pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            eti = "caso"
-            caso = ep.get("caso")
-            if isinstance(caso, dict) and caso.get("etiologia"):
-                eti = str(caso.get("etiologia")).strip().lower()
-
-            st.download_button(
-                "📄 Baixar PDF do treino (pronto pra imprimir)",
-                data=pdf_bytes,
-                file_name=f"relatorio_treino_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_TREINO}_baixar_pdf_tab2",
-                use_container_width=True,
-            )
 
     if f"{K_TREINO}_case" not in st.session_state:
         st.session_state[f"{K_TREINO}_case"] = None
         st.session_state[f"{K_TREINO}_visual"] = ""
         st.session_state[f"{K_TREINO}_ideal"] = ""
         st.session_state[f"{K_TREINO}_feedback"] = ""
-        st.session_state[f"{K_TREINO}_img_bytes"] = b""
 
     colA, colB = st.columns(2)
     with colA:
@@ -549,65 +368,24 @@ with tabs[1]:
             sim = SimuladorLogica()
             ideal = sim.avaliar(out.scenario)
             st.session_state[f"{K_TREINO}_ideal"] = ideal
+            _set_export_payload(origem="Treino (Gemini)", caso=out.scenario, descricao_visual=out.visual_description, plano_ideal=ideal)
 
-            # reseta feedback/imagem anteriores
-            st.session_state[f"{K_TREINO}_feedback"] = ""
-            st.session_state[f"{K_TREINO}_img_bytes"] = b""
-
-            _set_export_payload(
-                origem="Treino (Gemini)",
-                caso=out.scenario,
-                descricao_visual=out.visual_description,
-                plano_ideal=ideal,
-                feedback="",
-                resposta_estudante="",
-                images=[],
-            )
-
-            st.success("Caso gerado. Agora você pode (opcionalmente) gerar a imagem e depois gerar o feedback.")
+            st.success("Caso gerado. Agora o estudante responde e você gera o feedback.")
         except Exception as e:
             st.error(f"Falhou ao gerar caso. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
-    case = st.session_state.get(f"{K_TREINO}_case")
-    if not case:
-        st.info("Clique em **Gerar caso (Gemini)** para iniciar o treino.")
-    else:
+    case = st.session_state[f"{K_TREINO}_case"]
+    if case:
         st.markdown("### Cenário (JSON)")
         st.json(case)
 
         st.markdown("### Descrição visual")
-        st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
+        st.write(st.session_state[f"{K_TREINO}_visual"])
 
-        # --------- IMAGEM (Treino) (DESATIVADA) ---------
-        # A geração de esboço (imagem) via Gemini foi desativada para evitar confusão de versão/SDK.
-        # Mantido apenas como referência (como no botão "abrir PDF em nova aba").
-        #
-        # enable_img = st.toggle(
-        #     "Ativar imagem (treino) – gerar esboço rápido via Gemini",
-        #     value=False,
-        #     key=f"{K_TREINO}_enable_img",
-        # )
-        #
-        # if enable_img:
-        #     st.caption("A imagem é um esboço didático (não diagnóstico).")
-        #     if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
-        #         try:
-        #             from src.gemini_flow import GeminiImageGenerator
-        #             ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
-        #             img_bytes = ig.generate_sketch_png(
-        #                 visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
-        #             )
-        #             st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
-        #             _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
-        #             st.success("Imagem gerada e anexada ao PDF do treino.")
-        #         except Exception as e:
-        #             st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
-        #
-        #     img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
-        #     if img_bytes_now:
-        #         st.image(img_bytes_now, caption="Imagem do caso – esboço didático", use_container_width=True)
+        # --------- IMAGEM SINTÉTICA (GEMINI) ---------
+        # DESATIVADA TEMPORARIAMENTE
+        st.info("Imagem sintética desativada temporariamente (crédito Gemini / NumPy / Python 3.14).")
 
-        st.divider()
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
             "Digite o plano do estudante (TIME + condutas específicas):",
@@ -619,7 +397,7 @@ with tabs[1]:
         with col1:
             if st.button("Mostrar plano ideal (core)", key=f"{K_TREINO}_mostrar_ideal"):
                 st.markdown("### Plano ideal (core)")
-                st.text(st.session_state.get(f"{K_TREINO}_ideal", ""))
+                st.text(st.session_state[f"{K_TREINO}_ideal"])
 
         with col2:
             if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback_btn"):
@@ -630,27 +408,18 @@ with tabs[1]:
                         fb = GeminiFeedbackGenerator(model=model_feedback)
                         feedback = fb.generate_feedback(
                             scenario=case,
-                            visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+                            visual_description=st.session_state[f"{K_TREINO}_visual"],
                             student_plan=estudante_plano,
-                            ideal_plan=st.session_state.get(f"{K_TREINO}_ideal", ""),
+                            ideal_plan=st.session_state[f"{K_TREINO}_ideal"],
                         )
                         st.session_state[f"{K_TREINO}_feedback"] = feedback
-
-                        # Atualiza payload do PDF do treino
-                        _set_export_payload(
-                            origem="Treino (Gemini)",
-                            caso=case,
-                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""),
-                            resposta_estudante=estudante_plano,
-                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""),
-                            feedback=feedback,
-                        )
-
+                        _set_export_payload(origem="Treino (Gemini)", caso=case, descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""), resposta_estudante=estudante_plano, plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""), feedback=feedback)
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
                         st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
-
+    else:
+        st.info("Clique em 'Gerar caso (Gemini)' para iniciar o treino.")
 
 # ---------- TAB 3: Estudante insere caso + feedback robusto ----------
 with tabs[2]:
@@ -689,18 +458,16 @@ with tabs[2]:
             )
 
             # Abrir PDF em nova aba (evita impressão em branco / frame)
-            # Observação: o código abaixo foi desativado para evitar problemas com iframe/visualização.
-            # Se quiser habilitar, remova os comentários e certifique-se de que `b64` esteja definido:
-            # b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-            # st.markdown(
-            #     f"""
-            #     <a href="data:application/pdf;base64,{b64}" target="_blank"
-            #        style="text-decoration:none; font-weight:600;">
-            #        🖨️ Abrir PDF em nova aba (e imprimir)
-            #     </a>
-            #     """,
-            #     unsafe_allow_html=True,
-            # )
+            b64 = base64.b64encode(pdf_bytes).decode("utf-8")
+            st.markdown(
+                f"""
+                <a href="data:application/pdf;base64,{b64}" target="_blank"
+                   style="text-decoration:none; font-weight:600;">
+                   🖨️ Abrir PDF em nova aba (e imprimir)
+                </a>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
@@ -849,24 +616,8 @@ with tabs[2]:
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
-
-# --------- IMAGENS DO ESTUDANTE (somente para constar no PDF) ---------
-if modo == "Texto corrido":
-    imgs = st.file_uploader(
-        "Anexar 1–2 imagens (opcional) — entram no PDF",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key=f"{K_ESTUDANTE}_imgs_pdf",
-    )
-    if imgs:
-        if len(imgs) > 2:
-            st.warning("Máximo de 2 imagens. Vou usar apenas as 2 primeiras.")
-            imgs = imgs[:2]
-        images_payload = [{"name": f.name, "bytes": f.getvalue()} for f in imgs]
-        _set_export_payload(images=images_payload)
-        st.caption("As imagens não são analisadas; ficam apenas no relatório PDF.")
-        for f in imgs:
-            st.image(f, caption=f.name, use_container_width=True)
+    # --------- IMAGEM DO ESTUDANTE ---------
+    st.info("Upload de imagem desativado temporariamente (NumPy / Python 3.14).")
 
     st.divider()
     st.subheader("Feedback robusto (Gemini)")

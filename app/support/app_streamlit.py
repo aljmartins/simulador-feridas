@@ -264,22 +264,12 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     tz = ZoneInfo("America/Sao_Paulo")
     printed_at = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
 
-    FOOTER_TEXT = "PET G10 UFPel - Telemonitoramento de Feridas Crônicas"
-
-
     # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
     # Dica: um banner horizontal funciona melhor (ex: 1600x300)
     PDF_BANNER = LOGO_PDF_BANNER
     if not PDF_BANNER.exists():
         # fallback para o logo já existente no app
         PDF_BANNER = LOGO_WEB
-
-    def _draw_footer():
-        """Rodapé em todas as páginas (texto + número da página no canto inferior direito)."""
-        y_footer = 1.2*cm
-        c.setFont("Helvetica", 8)
-        c.drawString(2*cm, y_footer, FOOTER_TEXT)
-        c.drawRightString(w - 2*cm, y_footer, f"Página {c.getPageNumber()}")
 
     def _draw_header():
         """Cabeçalho em todas as páginas."""
@@ -320,7 +310,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         return y_after_banner - 0.75*cm
 
     def _new_page():
-        _draw_footer()
         c.showPage()
         return _draw_header()
 
@@ -426,7 +415,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
                 continue
 
 
-    _draw_footer()
     c.save()
     buf.seek(0)
     return buf.getvalue()

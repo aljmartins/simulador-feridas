@@ -79,13 +79,29 @@ data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
 st.markdown(
     f"""
     <div style="text-align:center;">
-      <img src="data:image/jpeg;base64,{data}" style="max-width:100%; height:auto;" />
+      <img src="data:image/jpeg;base64,{data}" style="height:160px; width:auto;" />
     </div>
     """,
     unsafe_allow_html=True
 )
 
 st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
+
+
+# INSERE Imagem
+LOGO = Path(__file__).parent / "assets" / "imagem.jpeg"
+IMAGEM = Path(__file__).resolve().parent / "assets" / "imagem.jpeg"
+data = base64.b64encode(LOGO.read_bytes()).decode("utf-8")
+st.markdown(
+    f"""
+    <div style="text-align:center;">
+      <img src="data:image/jpeg;base64,{data}" style="height:120px; width:auto;" />
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# INSERE Imagem Fim
 
 
 
@@ -130,52 +146,6 @@ st.markdown(
     "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
 )
-
-# ===== Caminhos robustos para assets (todos em app/assets) =====
-APP_DIR = Path(__file__).resolve().parent        # .../app
-ASSETS_DIR = APP_DIR / "assets"                  # .../app/assets
-
-def _img_to_b64(path: Path) -> str:
-    """Lê um arquivo de imagem e devolve base64. Se não existir, devolve string vazia (não quebra o app)."""
-    try:
-        if path.exists():
-            return base64.b64encode(path.read_bytes()).decode("utf-8")
-    except Exception:
-        pass
-    return ""
-
-insta_path = ASSETS_DIR / "instagram.png"
-enf_path   = ASSETS_DIR / "logo.enfermagem.png"
-
-insta_b64 = _img_to_b64(insta_path)
-enf_b64   = _img_to_b64(enf_path)
-
-st.markdown(
-    f"""
-    <div style="display:flex; align-items:center; gap:12px; margin-top:-10px; margin-bottom:12px;">
-        <img src="data:image/png;base64,{insta_b64}" width="24">
-        <a href="https://www.instagram.com/amorapele_ufpel/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           Amor à Pele
-        </a>
-        <span>|</span>
-        <a href="https://www.instagram.com/g10petsaude/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           PET G10
-        </a>
-        <span>|</span>
-        <img src="data:image/png;base64,{enf_b64}" width="24">
-        <a href="https://wp.ufpel.edu.br/fen/" target="_blank"
-           style="text-decoration:none; font-weight:500;">
-           Faculdade de Enfermagem – UFPel
-        </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-
 
 
 # ---------- SIDEBAR: Exportar PDF (global) ----------
@@ -264,22 +234,12 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     tz = ZoneInfo("America/Sao_Paulo")
     printed_at = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
 
-    FOOTER_TEXT = "PET G10 UFPel - Telemonitoramento de Feridas Crônicas"
-
-
     # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
     # Dica: um banner horizontal funciona melhor (ex: 1600x300)
     PDF_BANNER = LOGO_PDF_BANNER
     if not PDF_BANNER.exists():
         # fallback para o logo já existente no app
         PDF_BANNER = LOGO_WEB
-
-    def _draw_footer():
-        """Rodapé em todas as páginas (texto + número da página no canto inferior direito)."""
-        y_footer = 1.2*cm
-        c.setFont("Helvetica", 8)
-        c.drawString(2*cm, y_footer, FOOTER_TEXT)
-        c.drawRightString(w - 2*cm, y_footer, f"Página {c.getPageNumber()}")
 
     def _draw_header():
         """Cabeçalho em todas as páginas."""
@@ -320,7 +280,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         return y_after_banner - 0.75*cm
 
     def _new_page():
-        _draw_footer()
         c.showPage()
         return _draw_header()
 
@@ -426,7 +385,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
                 continue
 
 
-    _draw_footer()
     c.save()
     buf.seek(0)
     return buf.getvalue()
@@ -578,34 +536,32 @@ with tabs[1]:
         st.markdown("### Descrição visual")
         st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
 
-        # --------- IMAGEM (Treino) (DESATIVADA) ---------
-        # A geração de esboço (imagem) via Gemini foi desativada para evitar confusão de versão/SDK.
-        # Mantido apenas como referência (como no botão "abrir PDF em nova aba").
-        #
-        # enable_img = st.toggle(
-        #     "Ativar imagem (treino) – gerar esboço rápido via Gemini",
-        #     value=False,
-        #     key=f"{K_TREINO}_enable_img",
-        # )
-        #
-        # if enable_img:
-        #     st.caption("A imagem é um esboço didático (não diagnóstico).")
-        #     if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
-        #         try:
-        #             from src.gemini_flow import GeminiImageGenerator
-        #             ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
-        #             img_bytes = ig.generate_sketch_png(
-        #                 visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
-        #             )
-        #             st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
-        #             _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
-        #             st.success("Imagem gerada e anexada ao PDF do treino.")
-        #         except Exception as e:
-        #             st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
-        #
-        #     img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
-        #     if img_bytes_now:
-        #         st.image(img_bytes_now, caption="Imagem do caso – esboço didático", use_container_width=True)
+        # --------- IMAGEM (Treino) ---------
+        enable_img = st.toggle(
+            "Ativar imagem (treino) – gerar esboço rápido via Gemini",
+            value=False,
+            key=f"{K_TREINO}_enable_img",
+        )
+
+        if enable_img:
+            st.caption("A imagem é um esboço didático (não diagnóstico). Se sua conta/modelo não suportar imagem, o app vai avisar.")
+            if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
+                try:
+                    from src.gemini_flow import GeminiImageGenerator
+                    ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
+                    img_bytes = ig.generate_image(
+                        scenario=case,
+                        visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+                    )
+                    st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
+                    _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
+                    st.success("Imagem gerada e anexada ao PDF do treino.")
+                except Exception as e:
+                    st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
+
+            img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
+            if img_bytes_now:
+                st.image(img_bytes_now, caption="Imagem do caso (Gemini) – esboço didático", use_container_width=True)
 
         st.divider()
         st.markdown("### Resposta do estudante")
