@@ -556,9 +556,9 @@ def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
     )
     st.download_button(
         "Baixar prompt (.txt)",
-        data=prompt_txt,
+        data=prompt_txt.encode("utf-8"),
         file_name="prompt_esboco.txt",
-        mime="text/plain",
+        mime="text/plain; charset=utf-8",
         key=f"{key_prefix}_sketch_download",
     )
 tabs = st.tabs(["Simulador (manual)", "Capacitação (Gemini)", "Estudante: inserir caso"])
