@@ -125,9 +125,25 @@ from src.gemini_flow import GeminiCaseGenerator, GeminiFeedbackGenerator
 
 load_dotenv()
 
-# st.set_page_config(page_title="Simulador TIMERS", layout="centered")  # já definido no topo
+# ==============================
+# AVISO DE CONFIGURAÇÃO (GEMINI)
+# ==============================
+try:
+    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
+except Exception:
+    GEMINI_API_KEY = None
+GEMINI_API_KEY = (GEMINI_API_KEY or os.getenv("GEMINI_API_KEY") or "").strip() or None
+if not GEMINI_API_KEY:
+    st.warning(
+        "⚠️ Funções com IA (Gemini) estão indisponíveis.\n\n"
+        "A chave de acesso (GEMINI_API_KEY) não está configurada no ambiente/Secrets. "
+        "Você ainda pode usar o simulador manual e gerar PDFs."
+    )
+
+
+# st.set_page_config(page_title="Capacita TIMERS", layout="centered")  # já definido no topo
 st.markdown(
-    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
+    "<h3>Capacita TIMERS – Feridas Crônicas</h3>",
     unsafe_allow_html=True
 )
 
@@ -264,12 +280,22 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     tz = ZoneInfo("America/Sao_Paulo")
     printed_at = datetime.now(tz).strftime("%d/%m/%Y %H:%M")
 
+    FOOTER_TEXT = "PET G10 UFPel - Telemonitoramento de Feridas Crônicas"
+
+
     # Banner/logo do PDF (coloque o arquivo em /assets; se não existir, segue sem logo)
     # Dica: um banner horizontal funciona melhor (ex: 1600x300)
     PDF_BANNER = LOGO_PDF_BANNER
     if not PDF_BANNER.exists():
         # fallback para o logo já existente no app
         PDF_BANNER = LOGO_WEB
+
+    def _draw_footer():
+        """Rodapé em todas as páginas (texto + número da página no canto inferior direito)."""
+        y_footer = 1.2*cm
+        c.setFont("Helvetica", 8)
+        c.drawString(2*cm, y_footer, FOOTER_TEXT)
+        c.drawRightString(w - 2*cm, y_footer, f"Página {c.getPageNumber()}")
 
     def _draw_header():
         """Cabeçalho em todas as páginas."""
@@ -310,6 +336,7 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         return y_after_banner - 0.75*cm
 
     def _new_page():
+        _draw_footer()
         c.showPage()
         return _draw_header()
 
@@ -347,6 +374,7 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     resposta = ep.get("resposta_estudante") or ""
     plano_ideal = ep.get("plano_ideal") or ""
     feedback = ep.get("feedback") or ""
+    sketch_prompt = ep.get("sketch_prompt") or ""
     images = ep.get("images") or []  # lista de dicts: {name, bytes}
 
     if isinstance(caso, dict):
@@ -366,6 +394,9 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         y = draw_block("Plano ideal (core / TIME):", plano_ideal, y)
     if str(feedback).strip():
         y = draw_block("Feedback (Gemini):", feedback, y)
+
+    if str(sketch_prompt).strip():
+        y = draw_block("Prompt de esboço (PT-BR):", sketch_prompt, y)
 
 
     # --- Imagens anexadas (para constar no relatório) ---
@@ -415,13 +446,122 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
                 continue
 
 
+    _draw_footer()
     c.save()
     buf.seek(0)
     return buf.getvalue()
 
 
+# ==============================
+# PROMPT DE ESBOÇO (SEM GERAR IMAGEM)
+# Disponível em qualquer aba; gera um texto em PT-BR para o usuário copiar/colar em um gerador de imagens.
+# ==============================
+def _build_sketch_prompt(ep: dict) -> str:
+    """Monta um prompt em português (PT-BR) para gerar um ESBOÇO didático baseado no conteúdo do export_payload.
+    Não chama nenhuma API de imagem. É só texto, com wrap via st.text_area.
+    """
+    origem = (ep.get("origem") or "").strip() or "Simulador TIMERS"
+    caso = ep.get("caso") or {}
+    descricao_visual = (ep.get("descricao_visual") or "").strip()
+    plano_ideal = (ep.get("plano_ideal") or "").strip()
+    feedback = (ep.get("feedback") or "").strip()
+    resposta_estudante = (ep.get("resposta_estudante") or "").strip()
 
-tabs = st.tabs(["Simulador (manual)", "Treino (Gemini)", "Estudante: inserir caso"])
+    # Serializa caso (curto e legível)
+    if isinstance(caso, dict) and caso:
+        caso_txt = "; ".join([f"{k}={v}" for k, v in caso.items() if v is not None])
+    else:
+        caso_txt = str(caso).strip()
+
+    # Contexto mais rico (para Treino/Estudante)
+    contexto = []
+    if caso_txt:
+        contexto.append(f"Caso (resumo): {caso_txt}")
+    if descricao_visual:
+        contexto.append(f"Descrição visual (texto): {descricao_visual}")
+    if plano_ideal:
+        contexto.append(f"Pontos essenciais do plano ideal (core/TIME): {plano_ideal}")
+    if resposta_estudante:
+        contexto.append(f"Plano proposto pelo estudante (resumo): {resposta_estudante}")
+    if feedback:
+        contexto.append(f"Feedback ao estudante (resumo): {feedback}")
+
+    contexto_txt = "\n".join(contexto).strip()
+
+    prompt = f"""Crie um ESBOÇO didático (estilo infográfico simples), sem sangue explícito e sem conteúdo chocante.
+
+Objetivo: ajudar a entender o caso e o raciocínio TIMERS/TIME.
+Fonte: {origem}
+
+INSTRUÇÕES VISUAIS:
+- Layout limpo, fundo claro, traços simples, foco didático (não fotorealista).
+- Use rótulos curtos em português (PT-BR).
+- Evite detalhes clínicos sensacionalistas; o foco é educação e segurança do paciente.
+- Se fizer sentido, use comparação lado a lado (ex.: conduta adequada vs inadequada) ou um fluxograma curto.
+
+CONTEÚDO (baseado no caso/relatório):
+{contexto_txt if contexto_txt else "—"}
+
+ENTREGA:
+- 1 imagem única (formato quadrado ou paisagem), com títulos e setas/caixas quando necessário.
+"""
+    return prompt.strip()
+
+
+def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
+    """UI padrão (wrap + download).
+
+    Regra:
+    - O prompt só entra no PDF se o usuário ATIVAR (checkbox) neste fluxo.
+    """
+    # Exigência mínima: ter caso ou plano ideal/feedback (alguma coisa concreta)
+    tem_algo = any([
+        bool(ep.get("caso")),
+        bool(str(ep.get("plano_ideal", "")).strip()),
+        bool(str(ep.get("feedback", "")).strip()),
+        bool(str(ep.get("descricao_visual", "")).strip()),
+        bool(str(ep.get("resposta_estudante", "")).strip()),
+    ])
+    if not tem_algo:
+        st.info("Gere algum conteúdo primeiro para liberar o prompt de esboço.")
+        return
+
+    flag_key = f"{key_prefix}_sketch_enabled"
+    enabled = st.checkbox(
+        "Incluir prompt de esboço no PDF (opcional)",
+        value=bool(st.session_state.get(flag_key, False)),
+        key=flag_key,
+    )
+
+    if not enabled:
+        # Garante que o PDF NÃO inclua esboço se o usuário não ativar.
+        ep.pop("sketch_prompt", None)
+        st.caption("Ative a opção acima se quiser gerar o prompt e incluí-lo no PDF.")
+        return
+
+    prompt_txt = _build_sketch_prompt(ep).strip()
+    if not prompt_txt:
+        st.info("Ainda não há conteúdo suficiente para montar um prompt de esboço.")
+        ep.pop("sketch_prompt", None)
+        return
+
+    # Guarda no export_payload para que o PDF inclua (apenas quando enabled=True).
+    ep["sketch_prompt"] = prompt_txt
+
+    st.text_area(
+        "Prompt do esboço (PT-BR) — copie e cole no seu gerador de imagens",
+        value=prompt_txt,
+        height=220,
+        key=f"{key_prefix}_sketch_text",
+    )
+    st.download_button(
+        "Baixar prompt (.txt)",
+        data=prompt_txt.encode("utf-8"),
+        file_name="prompt_esboco.txt",
+        mime="text/plain; charset=utf-8",
+        key=f"{key_prefix}_sketch_download",
+    )
+tabs = st.tabs(["Simulador (manual)", "Capacitação (Gemini)", "Estudante: inserir caso"])
 
 # ---------- TAB 1: Manual ----------
 with tabs[0]:
@@ -465,53 +605,52 @@ with tabs[0]:
         }
         sim = SimuladorLogica()
         rel = sim.avaliar(dados)
+        st.markdown("### Relatório (core / TIME)")
         st.text(rel)
-        _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="")
+        _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="", resposta_estudante="")
 
+    st.divider()
+    st.subheader("Finalizar")
 
-# ---------- TAB 2: Treino com Gemini ----------
-with tabs[1]:
-    st.subheader("Treino: gerar caso via Gemini + resposta do estudante + feedback")
-
-    # Exportar PDF (também no modo Treino)
     ep = st.session_state.get("export_payload", {})
-    tem_algo = any([
-        bool(ep.get("caso")),
-        bool(str(ep.get("plano_ideal", "")).strip()),
-        bool(str(ep.get("feedback", "")).strip()),
-        bool(str(ep.get("resposta_estudante", "")).strip()),
-        bool(str(ep.get("descricao_visual", "")).strip()),
-        bool(ep.get("images")),
-    ])
+    pronto = (
+        (ep.get("origem") == "Simulador (manual)")
+        and bool(ep.get("caso"))
+        and bool(str(ep.get("plano_ideal", "")).strip())
+    )
 
-    colp1, colp2 = st.columns([1, 2])
-    with colp1:
-        st.caption("Exportar")
-    with colp2:
-        if not tem_algo or (ep.get("origem") not in ["Treino (Gemini)"] and not str(ep.get("origem","")).startswith("Treino")):
-            st.info("Gere um caso (e opcionalmente imagem/feedback) nesta aba para liberar o PDF do treino.")
-        else:
-            pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            eti = "caso"
-            caso = ep.get("caso")
-            if isinstance(caso, dict) and caso.get("etiologia"):
-                eti = str(caso.get("etiologia")).strip().lower()
+    if pronto:
+        # (a) Esboço: após avaliar caso (formulário/manual)
+        with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+            _render_sketch_prompt_ui(ep, key_prefix=f"{K_MANUAL}_final")
 
-            st.download_button(
-                "📄 Baixar PDF do treino (pronto pra imprimir)",
-                data=pdf_bytes,
-                file_name=f"relatorio_treino_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_TREINO}_baixar_pdf_tab2",
-                use_container_width=True,
-            )
+        # PDF SEMPRE POR ÚLTIMO
+        pdf_bytes = _pdf_bytes_from_export_payload(ep)
+        eti = "caso"
+        caso = ep.get("caso")
+        if isinstance(caso, dict) and caso.get("etiologia"):
+            eti = str(caso.get("etiologia")).strip().lower()
+        st.download_button(
+            "📄 Baixar PDF (pronto pra imprimir)",
+            data=pdf_bytes,
+            file_name=f"relatorio_manual_{eti}.pdf".replace(" ", "_"),
+            mime="application/pdf",
+            key=f"{K_MANUAL}_pdf_final",
+            width="stretch",
+        )
+    else:
+        st.info("Primeiro clique em **Avaliar (manual)**. Depois aparecem esboço e PDF (no final).")
+
+
+# ---------- TAB 2: Treino ----------
+with tabs[1]:
+    st.subheader("Capacitação: gerar caso via Gemini + resposta do estudante + feedback")
 
     if f"{K_TREINO}_case" not in st.session_state:
         st.session_state[f"{K_TREINO}_case"] = None
         st.session_state[f"{K_TREINO}_visual"] = ""
         st.session_state[f"{K_TREINO}_ideal"] = ""
         st.session_state[f"{K_TREINO}_feedback"] = ""
-        st.session_state[f"{K_TREINO}_img_bytes"] = b""
 
     colA, colB = st.columns(2)
     with colA:
@@ -528,37 +667,38 @@ with tabs[1]:
         )
 
     if st.button("Gerar caso (Gemini)", key=f"{K_TREINO}_gerar"):
-        try:
-            gen = GeminiCaseGenerator(model=model_case)
-            out = gen.generate_case()
-            st.session_state[f"{K_TREINO}_case"] = out.scenario
-            st.session_state[f"{K_TREINO}_visual"] = out.visual_description
+        if not GEMINI_API_KEY:
+            st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar o Treino.")
+        else:
+            try:
+                gen = GeminiCaseGenerator(model=model_case)
+                out = gen.generate_case()
 
-            sim = SimuladorLogica()
-            ideal = sim.avaliar(out.scenario)
-            st.session_state[f"{K_TREINO}_ideal"] = ideal
+                sim = SimuladorLogica()
+                ideal = sim.avaliar(out.scenario)
 
-            # reseta feedback/imagem anteriores
-            st.session_state[f"{K_TREINO}_feedback"] = ""
-            st.session_state[f"{K_TREINO}_img_bytes"] = b""
+                st.session_state[f"{K_TREINO}_case"] = out.scenario
+                st.session_state[f"{K_TREINO}_visual"] = out.visual_description
+                st.session_state[f"{K_TREINO}_ideal"] = ideal
+                st.session_state[f"{K_TREINO}_feedback"] = ""
 
-            _set_export_payload(
-                origem="Treino (Gemini)",
-                caso=out.scenario,
-                descricao_visual=out.visual_description,
-                plano_ideal=ideal,
-                feedback="",
-                resposta_estudante="",
-                images=[],
-            )
+                _set_export_payload(
+                    origem="Capacitação (Gemini)",
+                    caso=out.scenario,
+                    descricao_visual=out.visual_description,
+                    plano_ideal=ideal,
+                    feedback="",
+                    resposta_estudante="",
+                    images=[],
+                )
 
-            st.success("Caso gerado. Agora você pode (opcionalmente) gerar a imagem e depois gerar o feedback.")
-        except Exception as e:
-            st.error(f"Falhou ao gerar caso. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
+                st.success("Caso gerado. Agora escreva a resposta do estudante e gere o feedback.")
+            except Exception as e:
+                st.error(f"Falhou ao gerar caso. Detalhe: {e}")
 
     case = st.session_state.get(f"{K_TREINO}_case")
     if not case:
-        st.info("Clique em **Gerar caso (Gemini)** para iniciar o treino.")
+        st.info("Clique em **Gerar caso (Gemini)** para iniciar a capacitação.")
     else:
         st.markdown("### Cenário (JSON)")
         st.json(case)
@@ -566,36 +706,6 @@ with tabs[1]:
         st.markdown("### Descrição visual")
         st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
 
-        # --------- IMAGEM (Treino) (DESATIVADA) ---------
-        # A geração de esboço (imagem) via Gemini foi desativada para evitar confusão de versão/SDK.
-        # Mantido apenas como referência (como no botão "abrir PDF em nova aba").
-        #
-        # enable_img = st.toggle(
-        #     "Ativar imagem (treino) – gerar esboço rápido via Gemini",
-        #     value=False,
-        #     key=f"{K_TREINO}_enable_img",
-        # )
-        #
-        # if enable_img:
-        #     st.caption("A imagem é um esboço didático (não diagnóstico).")
-        #     if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
-        #         try:
-        #             from src.gemini_flow import GeminiImageGenerator
-        #             ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
-        #             img_bytes = ig.generate_sketch_png(
-        #                 visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
-        #             )
-        #             st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
-        #             _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
-        #             st.success("Imagem gerada e anexada ao PDF do treino.")
-        #         except Exception as e:
-        #             st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
-        #
-        #     img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
-        #     if img_bytes_now:
-        #         st.image(img_bytes_now, caption="Imagem do caso – esboço didático", use_container_width=True)
-
-        st.divider()
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
             "Digite o plano do estudante (TIME + condutas específicas):",
@@ -611,7 +721,9 @@ with tabs[1]:
 
         with col2:
             if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback_btn"):
-                if not estudante_plano.strip():
+                if not GEMINI_API_KEY:
+                    st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar o feedback.")
+                elif not estudante_plano.strip():
                     st.warning("O estudante ainda não escreveu nada.")
                 else:
                     try:
@@ -624,78 +736,65 @@ with tabs[1]:
                         )
                         st.session_state[f"{K_TREINO}_feedback"] = feedback
 
-                        # Atualiza payload do PDF do treino
                         _set_export_payload(
-                            origem="Treino (Gemini)",
+                            origem="Capacitação (Gemini)",
                             caso=case,
-                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""),
+                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual", ""),
                             resposta_estudante=estudante_plano,
-                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""),
+                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal", ""),
                             feedback=feedback,
                         )
 
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
-                        st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
+                        st.error(f"Falhou ao gerar feedback. Detalhe: {e}")
+
+    # (b) Esboço: após gerar caso (Treino) — pode ficar mais rico depois do feedback
+    st.divider()
+    st.subheader("Finalizar")
+
+    ep = st.session_state.get("export_payload", {})
+    tem_caso_treino = (str(ep.get("origem", "")).startswith("Capacitação") and bool(ep.get("caso")))
+
+    if tem_caso_treino:
+        with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+            _render_sketch_prompt_ui(ep, key_prefix=f"{K_TREINO}_final")
+    else:
+        st.info("Gere um caso na capacitação para liberar o prompt de esboço.")
+
+    # PDF da capacitação só no fim (depois de feedback)
+    pronto_pdf = (
+        tem_caso_treino
+        and bool(str(ep.get("resposta_estudante", "")).strip())
+        and bool(str(ep.get("feedback", "")).strip())
+    )
+    if pronto_pdf:
+        pdf_bytes = _pdf_bytes_from_export_payload(ep)
+        eti = "caso"
+        caso = ep.get("caso")
+        if isinstance(caso, dict) and caso.get("etiologia"):
+            eti = str(caso.get("etiologia")).strip().lower()
+        st.download_button(
+            "📄 Baixar PDF da capacitação (pronto pra imprimir)",
+            data=pdf_bytes,
+            file_name=f"relatorio_capacitacao_{eti}.pdf".replace(" ", "_"),
+            mime="application/pdf",
+            key=f"{K_TREINO}_pdf_final",
+            width="stretch",
+        )
+    else:
+        st.caption("O PDF da capacitação aparece só no final: depois da resposta do estudante e do feedback.")
 
 
-# ---------- TAB 3: Estudante insere caso + feedback robusto ----------
+# ---------- TAB 3: Estudante ----------
 with tabs[2]:
     st.subheader("Estudante: inserir caso clínico")
-
-    # Exportar PDF (robusto): gera arquivo e o usuário imprime pelo leitor de PDF (evita página em branco do iframe)
-    ep = st.session_state.get("export_payload", {})
-    tem_algo = any([
-        bool(ep.get("caso")),
-        bool(str(ep.get("plano_ideal", "")).strip()),
-        bool(str(ep.get("feedback", "")).strip()),
-        bool(str(ep.get("resposta_estudante", "")).strip()),
-        bool(str(ep.get("descricao_visual", "")).strip()),
-    ])
-
-    colp1, colp2 = st.columns([1, 2])
-    with colp1:
-        st.caption("Exportar")
-    with colp2:
-        if not tem_algo:
-            st.info("Gere algum conteúdo (caso/relatório/feedback) para liberar o PDF.")
-        else:
-            pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            eti = "caso"
-            caso = ep.get("caso")
-            if isinstance(caso, dict) and caso.get("etiologia"):
-                eti = str(caso.get("etiologia")).strip().lower()
-
-            st.download_button(
-                "📄 Baixar PDF (pronto pra imprimir)",
-                data=pdf_bytes,
-                file_name=f"relatorio_timers_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_ESTUDANTE}_baixar_pdf_tab3",
-                use_container_width=True,
-            )
-
-            # Abrir PDF em nova aba (evita impressão em branco / frame)
-            # Observação: o código abaixo foi desativado para evitar problemas com iframe/visualização.
-            # Se quiser habilitar, remova os comentários e certifique-se de que `b64` esteja definido:
-            # b64 = base64.b64encode(pdf_bytes).decode("utf-8")
-            # st.markdown(
-            #     f"""
-            #     <a href="data:application/pdf;base64,{b64}" target="_blank"
-            #        style="text-decoration:none; font-weight:600;">
-            #        🖨️ Abrir PDF em nova aba (e imprimir)
-            #     </a>
-            #     """,
-            #     unsafe_allow_html=True,
-            # )
-
 
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
         st.session_state[f"{K_ESTUDANTE}_dados"] = None
         st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
         st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
-        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = None
         st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
         st.session_state[f"{K_ESTUDANTE}_show_ideal"] = False
 
@@ -753,7 +852,7 @@ with tabs[2]:
             }
             st.session_state[f"{K_ESTUDANTE}_dados"] = dados
             st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
-            st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
+            st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
 
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
@@ -762,7 +861,41 @@ with tabs[2]:
                 origem="Estudante: inserir caso (formulário)",
                 caso=dados,
                 plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
+                feedback="",
+                resposta_estudante="",
             )
+
+        st.divider()
+        st.subheader("Finalizar")
+
+        ep = st.session_state.get("export_payload", {})
+        pronto_form = (
+            ("formulário" in str(ep.get("origem", "")).lower())
+            and bool(ep.get("caso"))
+            and bool(str(ep.get("plano_ideal", "")).strip())
+        )
+
+        if pronto_form:
+            # (c) Esboço: após avaliar caso (formulário)
+            with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+                _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_form_final")
+
+            # PDF SEMPRE POR ÚLTIMO
+            pdf_bytes = _pdf_bytes_from_export_payload(ep)
+            eti = "caso"
+            caso = ep.get("caso")
+            if isinstance(caso, dict) and caso.get("etiologia"):
+                eti = str(caso.get("etiologia")).strip().lower()
+            st.download_button(
+                "📄 Baixar PDF (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_estudante_form_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_ESTUDANTE}_pdf_form_final",
+                width="stretch",
+            )
+        else:
+            st.caption("Finalize clicando em **Avaliar caso (formulário)**. Aí aparecem esboço e PDF (no final).")
 
     else:
         st.caption("Descreva o caso em texto corrido. Se faltar dado, o sistema vai te perguntar o que falta.")
@@ -779,10 +912,11 @@ with tabs[2]:
                 value="gemini-3-flash-preview",
                 key=f"{K_ESTUDANTE}_model_case_tab3",
             )
-
         with colB:
             if st.button("Analisar caso (Gemini)", key=f"{K_ESTUDANTE}_analisar_texto"):
-                if not caso_txt.strip():
+                if not GEMINI_API_KEY:
+                    st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar este modo.")
+                elif not caso_txt.strip():
                     st.warning("Você ainda não descreveu o caso.")
                 else:
                     try:
@@ -790,8 +924,6 @@ with tabs[2]:
 
                         ex = GeminiCaseFromTextExtractor(model=modelo_caso)
                         parsed = ex.extract_or_ask(caso_txt)
-
-                        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = parsed
 
                         if parsed.get("status") == "NEED_MORE_INFO":
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = parsed.get("questions", "")
@@ -803,13 +935,16 @@ with tabs[2]:
                             st.session_state[f"{K_ESTUDANTE}_dados"] = dados
                             st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
+                            st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
 
-                            st.success("Caso entendido. Relatório gerado pelo core.")
+                            st.success("Caso entendido. Relatório (core) gerado.")
 
                             _set_export_payload(
                                 origem="Estudante: inserir caso (texto corrido)",
                                 caso=dados,
                                 plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
+                                feedback="",
+                                resposta_estudante="",
                             )
                     except Exception as e:
                         st.error(f"Falhou ao interpretar o texto. Detalhe: {e}")
@@ -818,70 +953,29 @@ with tabs[2]:
             st.markdown("### Perguntas do sistema (para completar o caso)")
             st.write(st.session_state[f"{K_ESTUDANTE}_perguntas_caso"])
 
-
-        # --- Resultado salvo da análise (não some ao avançar) ---
-        parsed_saved = st.session_state.get(f"{K_ESTUDANTE}_parsed_texto")
-        if parsed_saved:
-            st.markdown("### Resultado: Analisar caso (Gemini)")
-            if parsed_saved.get("status") == "NEED_MORE_INFO":
-                st.info("Faltam dados para estruturar o caso com segurança.")
-                st.write(parsed_saved.get("questions", ""))
-            else:
-                st.success("Caso estruturado (JSON) e relatório core preservados abaixo.")
-
-        # Mostra novamente o caso interpretado + relatório core se já existirem (para impressão)
+        # Mostra novamente o caso interpretado + relatório core se já existirem
         if st.session_state.get(f"{K_ESTUDANTE}_dados"):
-            st.markdown("### Caso interpretado (interno)")
+            st.markdown("### Caso estruturado (interno)")
             st.json(st.session_state[f"{K_ESTUDANTE}_dados"])
 
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
+            st.divider()
+            st.subheader("Feedback (Gemini)")
 
-# --------- IMAGENS DO ESTUDANTE (somente para constar no PDF) ---------
-if modo == "Texto corrido":
-    imgs = st.file_uploader(
-        "Anexar 1–2 imagens (opcional) — entram no PDF",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key=f"{K_ESTUDANTE}_imgs_pdf",
-    )
-    if imgs:
-        if len(imgs) > 2:
-            st.warning("Máximo de 2 imagens. Vou usar apenas as 2 primeiras.")
-            imgs = imgs[:2]
-        images_payload = [{"name": f.name, "bytes": f.getvalue()} for f in imgs]
-        _set_export_payload(images=images_payload)
-        st.caption("As imagens não são analisadas; ficam apenas no relatório PDF.")
-        for f in imgs:
-            st.image(f, caption=f.name, use_container_width=True)
+            modelo_fb = st.text_input(
+                "Modelo Gemini (feedback)",
+                value="gemini-3-flash-preview",
+                key=f"{K_ESTUDANTE}_model_feedback_tab3",
+            )
 
-    st.divider()
-    st.subheader("Feedback robusto (Gemini)")
+            estudante_plano = st.text_area(
+                "Plano de cuidado proposto pelo estudante (texto corrido):",
+                height=180,
+                key=f"{K_ESTUDANTE}_plano_tab3",
+            )
 
-    if not st.session_state.get(f"{K_ESTUDANTE}_dados"):
-        st.info("Primeiro finalize o caso (Formulário ou Texto corrido). Depois escreva seu plano e gere o feedback.")
-    else:
-        modelo_fb = st.text_input(
-            "Modelo Gemini (feedback)",
-            value="gemini-3-flash-preview",
-            key=f"{K_ESTUDANTE}_model_feedback_tab3",
-        )
-
-        st.markdown("### Plano de cuidado proposto pelo estudante (texto corrido)")
-        estudante_plano = st.text_area(
-            "Explique seu raciocínio e o plano (TIME + condutas específicas):",
-            height=180,
-            key=f"{K_ESTUDANTE}_plano_tab3",
-        )
-
-        colx, coly = st.columns(2)
-        with colx:
-            if st.button("Mostrar plano ideal (core)", key=f"{K_ESTUDANTE}_mostrar_ideal_tab3"):
-                st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
-                st.rerun()
-
-        with coly:
             if st.button("Gerar feedback (Gemini)", key=f"{K_ESTUDANTE}_gerar_feedback_tab3"):
                 if not estudante_plano.strip():
                     st.warning("Você ainda não escreveu o plano.")
@@ -894,70 +988,50 @@ if modo == "Texto corrido":
                             student_plan=estudante_plano,
                             ideal_plan=st.session_state[f"{K_ESTUDANTE}_ideal"],
                         )
-
                         st.session_state[f"{K_ESTUDANTE}_feedback"] = feedback
-                        st.session_state["feedback_estudante"] = feedback
-
-                        # após gerar feedback, também mostrar o plano ideal automaticamente
-                        st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
 
                         _set_export_payload(
-                            origem="Estudante: inserir caso",
+                            origem="Estudante: inserir caso (texto corrido)",
                             caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
                             resposta_estudante=estudante_plano,
                             plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal", ""),
                             feedback=feedback,
                         )
 
-                        st.rerun()
-
+                        st.markdown("### Feedback ao estudante")
+                        st.write(feedback)
                     except Exception as e:
-                        st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
+                        st.error(f"Falhou ao gerar feedback. Detalhe: {e}")
 
-        # --------- Resultados persistentes (não somem ao clicar em outros botões) ---------
-        feedback_salvo = st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
-        if feedback_salvo:
-            if str(feedback_salvo).strip().startswith("PRECISO DE MAIS DADOS:"):
-                st.warning("Seu texto ainda está incompleto. Responda o que falta e rode novamente.")
-            st.markdown("### Retorno do professor (Gemini)")
-            st.write(feedback_salvo)
+        # (d) Finalizar: esboço após avaliar caso + feedback; PDF por último
+        st.divider()
+        st.subheader("Finalizar")
 
-        if st.session_state.get(f"{K_ESTUDANTE}_show_ideal"):
-            st.info("Plano ideal já está no relatório (acima).")
-    # ---------- EXPORTAR RELATÓRIO (PDF) ----------
-    # st.divider()
-    # st.subheader("Exportar relatório (PDF)")
-    #
-    # Dados necessários
-    # caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
-    # plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
-    # resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano_tab3", "")
-    # feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
-    #
-    # pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
-    #
-    # if not pronto:
-    #     st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
-    # else:
-    #     if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
-    #         # Nome amigável
-    #         ts = datetime.now().strftime("%Y%m%d-%H%M")
-    #         eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
-    #         nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
-    #
-    #         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-    #             gerar_pdf_relatorio(
-    #                 path=tmp.name,
-    #                 caso=caso,
-    #                 resposta_estudante=str(resposta_estudante),
-    #                 plano_ideal=str(plano_ideal),
-    #                 feedback=str(feedback_pdf),
-    #             )
-    #             with open(tmp.name, "rb") as f:
-    #                 st.download_button(
-    #                     label="📄 Baixar PDF",
-    #                     data=f,
-    #                     file_name=nome_arquivo,
-    #                     mime="application/pdf",
-    #                     key=f"{K_ESTUDANTE}_pdf_download",
-    #                 )
+        ep = st.session_state.get("export_payload", {})
+        pronto_texto = (
+            ("texto" in str(ep.get("origem", "")).lower())
+            and bool(ep.get("caso"))
+            and bool(str(ep.get("resposta_estudante", "")).strip())
+            and bool(str(ep.get("feedback", "")).strip())
+        )
+
+        if pronto_texto:
+            with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+                _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_text_final")
+
+            pdf_bytes = _pdf_bytes_from_export_payload(ep)
+            eti = "caso"
+            caso = ep.get("caso")
+            if isinstance(caso, dict) and caso.get("etiologia"):
+                eti = str(caso.get("etiologia")).strip().lower()
+            st.download_button(
+                "📄 Baixar PDF (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_estudante_texto_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_ESTUDANTE}_pdf_text_final",
+                width="stretch",
+            )
+        else:
+            st.caption("No modo **Texto corrido**, o esboço e o PDF aparecem só no final (depois do plano e do feedback).")
+

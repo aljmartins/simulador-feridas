@@ -1,0 +1,28 @@
+Crie um ESBOÇO didático (estilo infográfico simples), sem sangue explícito e sem conteúdo chocante.
+
+Objetivo: ajudar a entender o caso e o raciocínio TIMERS/TIME.
+Fonte: Simulador (manual)
+
+INSTRUÇÕES VISUAIS:
+- Layout limpo, fundo claro, traços simples, foco didático (não fotorealista).
+- Use rótulos curtos em português (PT-BR).
+- Evite detalhes clínicos sensacionalistas; o foco é educação e segurança do paciente.
+- Se fizer sentido, use comparação lado a lado (ex.: conduta adequada vs inadequada) ou um fluxograma curto.
+
+CONTEÚDO (baseado no caso/relatório):
+Caso (resumo): etiologia=Arterial; itb=1.0; tecido=Necrose; infeccao=False; exsudato=Seco; bordas=Estagnada
+Pontos essenciais do plano ideal (core/TIME): 📋 DIAGNÓSTICO: Úlcera ARTERIAL (ITB: 1.0)
+--------------------------------------------------
+⚠️ [ATENÇÃO] Ferida Arterial (Confirmar diagnóstico / considerar calcificação)
+
+--- PROTOCOLO T.I.M.E. (TRATAMENTO LOCAL) ---
+🛡️ T (Tecido): Necrose detectado
+   -> CONDUTA: Desbridamento (remoção de tecido inviável)
+✨ I (Infecção): Ferida limpa
+🌵 M (Umidade): Leito seco
+   -> CONDUTA: Hidrogel (hidratar)
+⏹️ E (Bordas): Paradas/Enroladas
+   -> CONDUTA: Reavaliar diagnóstico ou considerar terapia avançada
+
+ENTREGA:
+- 1 imagem única (formato quadrado ou paisagem), com títulos e setas/caixas quando necessário.

@@ -91,7 +91,6 @@ st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
 
 import streamlit as st
 import os
-import streamlit.components.v1 as components
 
 # ==============================
 # CONTROLE DE ACESSO (DESATIVADO)
@@ -129,11 +128,7 @@ load_dotenv()
 # ==============================
 # AVISO DE CONFIGURAÇÃO (GEMINI)
 # ==============================
-try:
-    GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
-except Exception:
-    GEMINI_API_KEY = None
-GEMINI_API_KEY = (GEMINI_API_KEY or os.getenv("GEMINI_API_KEY") or "").strip() or None
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
     st.warning(
         "⚠️ Funções com IA (Gemini) estão indisponíveis.\n\n"
@@ -142,9 +137,9 @@ if not GEMINI_API_KEY:
     )
 
 
-# st.set_page_config(page_title="Capacita TIMERS", layout="centered")  # já definido no topo
+# st.set_page_config(page_title="Simulador TIMERS", layout="centered")  # já definido no topo
 st.markdown(
-    "<h3>Capacita TIMERS – Feridas Crônicas</h3>",
+    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
 )
 
@@ -375,7 +370,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     resposta = ep.get("resposta_estudante") or ""
     plano_ideal = ep.get("plano_ideal") or ""
     feedback = ep.get("feedback") or ""
-    sketch_prompt = ep.get("sketch_prompt") or ""
     images = ep.get("images") or []  # lista de dicts: {name, bytes}
 
     if isinstance(caso, dict):
@@ -395,9 +389,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         y = draw_block("Plano ideal (core / TIME):", plano_ideal, y)
     if str(feedback).strip():
         y = draw_block("Feedback (Gemini):", feedback, y)
-
-    if str(sketch_prompt).strip():
-        y = draw_block("Prompt de esboço (PT-BR):", sketch_prompt, y)
 
 
     # --- Imagens anexadas (para constar no relatório) ---
@@ -510,11 +501,7 @@ ENTREGA:
 
 
 def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
-    """UI padrão (wrap + download).
-
-    Regra:
-    - O prompt só entra no PDF se o usuário ATIVAR (checkbox) neste fluxo.
-    """
+    """UI padrão (wrap + download). Só aparece quando há conteúdo suficiente."""
     # Exigência mínima: ter caso ou plano ideal/feedback (alguma coisa concreta)
     tem_algo = any([
         bool(ep.get("caso")),
@@ -527,27 +514,10 @@ def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
         st.info("Gere algum conteúdo primeiro para liberar o prompt de esboço.")
         return
 
-    flag_key = f"{key_prefix}_sketch_enabled"
-    enabled = st.checkbox(
-        "Incluir prompt de esboço no PDF (opcional)",
-        value=bool(st.session_state.get(flag_key, False)),
-        key=flag_key,
-    )
-
-    if not enabled:
-        # Garante que o PDF NÃO inclua esboço se o usuário não ativar.
-        ep.pop("sketch_prompt", None)
-        st.caption("Ative a opção acima se quiser gerar o prompt e incluí-lo no PDF.")
-        return
-
     prompt_txt = _build_sketch_prompt(ep).strip()
     if not prompt_txt:
         st.info("Ainda não há conteúdo suficiente para montar um prompt de esboço.")
-        ep.pop("sketch_prompt", None)
         return
-
-    # Guarda no export_payload para que o PDF inclua (apenas quando enabled=True).
-    ep["sketch_prompt"] = prompt_txt
 
     st.text_area(
         "Prompt do esboço (PT-BR) — copie e cole no seu gerador de imagens",
@@ -555,116 +525,17 @@ def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
         height=220,
         key=f"{key_prefix}_sketch_text",
     )
-    
-    # Botões de download e copiar lado a lado
-    col_download_sketch, col_copy_sketch = st.columns([1, 1])
-    
-    with col_download_sketch:
-        st.download_button(
-            "💾 Baixar prompt (.txt)",
-            data=prompt_txt.encode("utf-8"),
-            file_name="prompt_esboco.txt",
-            mime="text/plain; charset=utf-8",
-            key=f"{key_prefix}_sketch_download",
-            use_container_width=True,
-        )
-    
-    with col_copy_sketch:
-        # Botão de copiar o prompt do esboço (azul marinho)
-        copy_sketch_html = f"""
-        <button onclick="copySketchPrompt_{key_prefix}()" 
-                style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                       color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                       cursor:pointer; font-size:0.9rem; font-weight:500;">
-            📋 Copiar prompt
-        </button>
-        <textarea id="sketchTextToCopy_{key_prefix}" style="position:absolute; left:-9999px;">{prompt_txt}</textarea>
-        <script>
-        function copySketchPrompt_{key_prefix}() {{
-            const text = document.getElementById('sketchTextToCopy_{key_prefix}').value;
-            navigator.clipboard.writeText(text).then(function() {{
-                const btn = event.target;
-                const original = btn.innerHTML;
-                btn.innerHTML = '✅ Copiado!';
-                btn.style.backgroundColor = '#0e7c0e';
-                setTimeout(function() {{
-                    btn.innerHTML = original;
-                    btn.style.backgroundColor = '#1e3a8a';
-                }}, 2000);
-            }}, function(err) {{
-                alert('Erro ao copiar: ' + err);
-            }});
-        }}
-        </script>
-        """
-        components.html(copy_sketch_html, height=50)
+    st.download_button(
+        "Baixar prompt (.txt)",
+        data=prompt_txt,
+        file_name="prompt_esboco.txt",
+        mime="text/plain",
+        key=f"{key_prefix}_sketch_download",
+        use_container_width=True,
+    )
 
 
-def _generate_text_from_export_payload(ep: dict) -> str:
-    """Gera texto completo formatado a partir do export_payload para copiar."""
-    lines = []
-    lines.append("=" * 60)
-    lines.append("RELATÓRIO TIMERS - FERIDAS CRÔNICAS")
-    lines.append("=" * 60)
-    lines.append("")
-    
-    origem = ep.get("origem", "")
-    if origem:
-        lines.append(f"Origem: {origem}")
-        lines.append("")
-    
-    caso = ep.get("caso")
-    if caso:
-        lines.append("CASO CLÍNICO:")
-        lines.append("-" * 60)
-        if isinstance(caso, dict):
-            for k, v in caso.items():
-                lines.append(f"  {k}: {v}")
-        else:
-            lines.append(str(caso))
-        lines.append("")
-    
-    descricao = ep.get("descricao_visual", "")
-    if descricao:
-        lines.append("DESCRIÇÃO VISUAL:")
-        lines.append("-" * 60)
-        lines.append(descricao)
-        lines.append("")
-    
-    plano = ep.get("plano_ideal", "")
-    if plano:
-        lines.append("PLANO DE CUIDADO IDEAL (TIMERS):")
-        lines.append("-" * 60)
-        lines.append(plano)
-        lines.append("")
-    
-    resposta = ep.get("resposta_estudante", "")
-    if resposta:
-        lines.append("RESPOSTA DO ESTUDANTE:")
-        lines.append("-" * 60)
-        lines.append(resposta)
-        lines.append("")
-    
-    feedback = ep.get("feedback", "")
-    if feedback:
-        lines.append("FEEDBACK:")
-        lines.append("-" * 60)
-        lines.append(feedback)
-        lines.append("")
-    
-    sketch = ep.get("sketch_prompt", "")
-    if sketch:
-        lines.append("PROMPT DE ESBOÇO:")
-        lines.append("-" * 60)
-        lines.append(sketch)
-        lines.append("")
-    
-    lines.append("=" * 60)
-    lines.append("Gerado pelo Simulador TIMERS - UFPel")
-    lines.append("=" * 60)
-    
-    return "\n".join(lines)
-tabs = st.tabs(["Simulador (manual)", "Capacitação (Gemini)", "Estudante: inserir caso"])
+tabs = st.tabs(["Simulador (manual)", "Treino (Gemini)", "Estudante: inserir caso"])
 
 # ---------- TAB 1: Manual ----------
 with tabs[0]:
@@ -708,86 +579,52 @@ with tabs[0]:
         }
         sim = SimuladorLogica()
         rel = sim.avaliar(dados)
-        st.markdown("### Relatório (core / TIME)")
         st.text(rel)
-        _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="", resposta_estudante="")
+        _set_export_payload(origem="Simulador (manual)", caso=dados, plano_ideal=rel, feedback="")
 
-    st.divider()
-    st.subheader("Finalizar")
 
-    ep = st.session_state.get("export_payload", {})
-    pronto = (
-        (ep.get("origem") == "Simulador (manual)")
-        and bool(ep.get("caso"))
-        and bool(str(ep.get("plano_ideal", "")).strip())
+
+
+st.divider()
+st.subheader("Finalizar (PDF e esboço)")
+
+ep = st.session_state.get("export_payload", {})
+pronto_pdf = (
+    (ep.get("origem") == "Simulador (manual)")
+    and bool(ep.get("caso"))
+    and bool(str(ep.get("plano_ideal", "")).strip())
+)
+
+if pronto_pdf:
+    pdf_bytes = _pdf_bytes_from_export_payload(ep)
+    eti = "caso"
+    caso = ep.get("caso")
+    if isinstance(caso, dict) and caso.get("etiologia"):
+        eti = str(caso.get("etiologia")).strip().lower()
+    st.download_button(
+        "📄 Baixar PDF (pronto pra imprimir)",
+        data=pdf_bytes,
+        file_name=f"relatorio_manual_{eti}.pdf".replace(" ", "_"),
+        mime="application/pdf",
+        key=f"{K_MANUAL}_baixar_pdf_final",
+        use_container_width=True,
     )
+else:
+    st.info("Primeiro clique em **Avaliar (manual)** para liberar o PDF.")
 
-    if pronto:
-        # (a) Esboço: após avaliar caso (formulário/manual)
-        with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
-            _render_sketch_prompt_ui(ep, key_prefix=f"{K_MANUAL}_final")
+with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+    _render_sketch_prompt_ui(ep, key_prefix=f"{K_MANUAL}_final")
 
-        # PDF e Copiar lado a lado
-        pdf_bytes = _pdf_bytes_from_export_payload(ep)
-        texto_completo = _generate_text_from_export_payload(ep)
-        eti = "caso"
-        caso = ep.get("caso")
-        if isinstance(caso, dict) and caso.get("etiologia"):
-            eti = str(caso.get("etiologia")).strip().lower()
-        
-        col_pdf, col_copy = st.columns([1, 1])
-        
-        with col_pdf:
-            st.download_button(
-                "📄 Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"relatorio_manual_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_MANUAL}_pdf_final",
-                use_container_width=True,
-            )
-        
-        with col_copy:
-            copy_button_html = f"""
-            <button onclick="copyReport_manual()" 
-                    style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                           color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                           cursor:pointer; font-size:0.9rem; font-weight:500;">
-                📋 Copiar texto
-            </button>
-            <textarea id="reportTextToCopy_manual" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-            <script>
-            function copyReport_manual() {{
-                const text = document.getElementById('reportTextToCopy_manual').value;
-                navigator.clipboard.writeText(text).then(function() {{
-                    const btn = event.target;
-                    const original = btn.innerHTML;
-                    btn.innerHTML = '✅ Copiado!';
-                    btn.style.backgroundColor = '#0e7c0e';
-                    setTimeout(function() {{
-                        btn.innerHTML = original;
-                        btn.style.backgroundColor = '#1e3a8a';
-                    }}, 2000);
-                }}, function(err) {{
-                    alert('Erro ao copiar: ' + err);
-                }});
-            }}
-            </script>
-            """
-            components.html(copy_button_html, height=50)
-    else:
-        st.info("Primeiro clique em **Avaliar (manual)**. Depois aparecem esboço e PDF (no final).")
-
-
-# ---------- TAB 2: Treino ----------
+# ---------- TAB 2: Treino com Gemini ----------
 with tabs[1]:
-    st.subheader("Capacitação: gerar caso via Gemini + resposta do estudante + feedback")
+    st.subheader("Treino: gerar caso via Gemini + resposta do estudante + feedback")
 
     if f"{K_TREINO}_case" not in st.session_state:
         st.session_state[f"{K_TREINO}_case"] = None
         st.session_state[f"{K_TREINO}_visual"] = ""
         st.session_state[f"{K_TREINO}_ideal"] = ""
         st.session_state[f"{K_TREINO}_feedback"] = ""
+        st.session_state[f"{K_TREINO}_img_bytes"] = b""
 
     colA, colB = st.columns(2)
     with colA:
@@ -804,38 +641,37 @@ with tabs[1]:
         )
 
     if st.button("Gerar caso (Gemini)", key=f"{K_TREINO}_gerar"):
-        if not GEMINI_API_KEY:
-            st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar o Treino.")
-        else:
-            try:
-                gen = GeminiCaseGenerator(model=model_case)
-                out = gen.generate_case()
+        try:
+            gen = GeminiCaseGenerator(model=model_case)
+            out = gen.generate_case()
+            st.session_state[f"{K_TREINO}_case"] = out.scenario
+            st.session_state[f"{K_TREINO}_visual"] = out.visual_description
 
-                sim = SimuladorLogica()
-                ideal = sim.avaliar(out.scenario)
+            sim = SimuladorLogica()
+            ideal = sim.avaliar(out.scenario)
+            st.session_state[f"{K_TREINO}_ideal"] = ideal
 
-                st.session_state[f"{K_TREINO}_case"] = out.scenario
-                st.session_state[f"{K_TREINO}_visual"] = out.visual_description
-                st.session_state[f"{K_TREINO}_ideal"] = ideal
-                st.session_state[f"{K_TREINO}_feedback"] = ""
+            # reseta feedback/imagem anteriores
+            st.session_state[f"{K_TREINO}_feedback"] = ""
+            st.session_state[f"{K_TREINO}_img_bytes"] = b""
 
-                _set_export_payload(
-                    origem="Capacitação (Gemini)",
-                    caso=out.scenario,
-                    descricao_visual=out.visual_description,
-                    plano_ideal=ideal,
-                    feedback="",
-                    resposta_estudante="",
-                    images=[],
-                )
+            _set_export_payload(
+                origem="Treino (Gemini)",
+                caso=out.scenario,
+                descricao_visual=out.visual_description,
+                plano_ideal=ideal,
+                feedback="",
+                resposta_estudante="",
+                images=[],
+            )
 
-                st.success("Caso gerado. Agora escreva a resposta do estudante e gere o feedback.")
-            except Exception as e:
-                st.error(f"Falhou ao gerar caso. Detalhe: {e}")
+            st.success("Caso gerado. Agora você pode (opcionalmente) gerar a imagem e depois gerar o feedback.")
+        except Exception as e:
+            st.error(f"Falhou ao gerar caso. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
     case = st.session_state.get(f"{K_TREINO}_case")
     if not case:
-        st.info("Clique em **Gerar caso (Gemini)** para iniciar a capacitação.")
+        st.info("Clique em **Gerar caso (Gemini)** para iniciar o treino.")
     else:
         st.markdown("### Cenário (JSON)")
         st.json(case)
@@ -843,6 +679,36 @@ with tabs[1]:
         st.markdown("### Descrição visual")
         st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
 
+        # --------- IMAGEM (Treino) (DESATIVADA) ---------
+        # A geração de esboço (imagem) via Gemini foi desativada para evitar confusão de versão/SDK.
+        # Mantido apenas como referência (como no botão "abrir PDF em nova aba").
+        #
+        # enable_img = st.toggle(
+        #     "Ativar imagem (treino) – gerar esboço rápido via Gemini",
+        #     value=False,
+        #     key=f"{K_TREINO}_enable_img",
+        # )
+        #
+        # if enable_img:
+        #     st.caption("A imagem é um esboço didático (não diagnóstico).")
+        #     if st.button("Gerar imagem (Gemini)", key=f"{K_TREINO}_gerar_img"):
+        #         try:
+        #             from src.gemini_flow import GeminiImageGenerator
+        #             ig = GeminiImageGenerator(model="imagen-3.0-generate-002")
+        #             img_bytes = ig.generate_sketch_png(
+        #                 visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+        #             )
+        #             st.session_state[f"{K_TREINO}_img_bytes"] = img_bytes
+        #             _set_export_payload(images=[{"name": "imagem_treino.png", "bytes": img_bytes}])
+        #             st.success("Imagem gerada e anexada ao PDF do treino.")
+        #         except Exception as e:
+        #             st.error(f"Não consegui gerar a imagem. Detalhe: {e}")
+        #
+        #     img_bytes_now = st.session_state.get(f"{K_TREINO}_img_bytes") or b""
+        #     if img_bytes_now:
+        #         st.image(img_bytes_now, caption="Imagem do caso – esboço didático", use_container_width=True)
+
+        st.divider()
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
             "Digite o plano do estudante (TIME + condutas específicas):",
@@ -858,9 +724,7 @@ with tabs[1]:
 
         with col2:
             if st.button("Gerar feedback (Gemini)", key=f"{K_TREINO}_feedback_btn"):
-                if not GEMINI_API_KEY:
-                    st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar o feedback.")
-                elif not estudante_plano.strip():
+                if not estudante_plano.strip():
                     st.warning("O estudante ainda não escreveu nada.")
                 else:
                     try:
@@ -873,99 +737,66 @@ with tabs[1]:
                         )
                         st.session_state[f"{K_TREINO}_feedback"] = feedback
 
+                        # Atualiza payload do PDF do treino
                         _set_export_payload(
-                            origem="Capacitação (Gemini)",
+                            origem="Treino (Gemini)",
                             caso=case,
-                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual", ""),
+                            descricao_visual=st.session_state.get(f"{K_TREINO}_visual",""),
                             resposta_estudante=estudante_plano,
-                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal", ""),
+                            plano_ideal=st.session_state.get(f"{K_TREINO}_ideal",""),
                             feedback=feedback,
                         )
 
                         st.markdown("### Feedback ao estudante")
                         st.write(feedback)
                     except Exception as e:
-                        st.error(f"Falhou ao gerar feedback. Detalhe: {e}")
+                        st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
-    # (b) Esboço: após gerar caso (Treino) — pode ficar mais rico depois do feedback
-    st.divider()
-    st.subheader("Finalizar")
 
-    ep = st.session_state.get("export_payload", {})
-    tem_caso_treino = (str(ep.get("origem", "")).startswith("Capacitação") and bool(ep.get("caso")))
 
-    if tem_caso_treino:
-        with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
-            _render_sketch_prompt_ui(ep, key_prefix=f"{K_TREINO}_final")
-    else:
-        st.info("Gere um caso na capacitação para liberar o prompt de esboço.")
 
-    # PDF da capacitação só no fim (depois de feedback)
-    pronto_pdf = (
-        tem_caso_treino
-        and bool(str(ep.get("resposta_estudante", "")).strip())
-        and bool(str(ep.get("feedback", "")).strip())
+# ---------- FINAL DO PERCURSO (Treino) ----------
+st.divider()
+st.subheader("Finalizar (PDF e esboço)")
+
+ep = st.session_state.get("export_payload", {})
+pronto_pdf = (
+    str(ep.get("origem","")).startswith("Treino")
+    and bool(ep.get("caso"))
+    and bool(str(ep.get("resposta_estudante","")).strip())
+    and bool(str(ep.get("feedback","")).strip())
+)
+
+if pronto_pdf:
+    pdf_bytes = _pdf_bytes_from_export_payload(ep)
+    eti = "caso"
+    caso = ep.get("caso")
+    if isinstance(caso, dict) and caso.get("etiologia"):
+        eti = str(caso.get("etiologia")).strip().lower()
+    st.download_button(
+        "📄 Baixar PDF do treino (pronto pra imprimir)",
+        data=pdf_bytes,
+        file_name=f"relatorio_treino_{eti}.pdf".replace(" ", "_"),
+        mime="application/pdf",
+        key=f"{K_TREINO}_baixar_pdf_final",
+        use_container_width=True,
     )
-    if pronto_pdf:
-        pdf_bytes = _pdf_bytes_from_export_payload(ep)
-        texto_completo = _generate_text_from_export_payload(ep)
-        eti = "caso"
-        caso = ep.get("caso")
-        if isinstance(caso, dict) and caso.get("etiologia"):
-            eti = str(caso.get("etiologia")).strip().lower()
-        
-        col_pdf, col_copy = st.columns([1, 1])
-        
-        with col_pdf:
-            st.download_button(
-                "📄 Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"relatorio_capacitacao_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_TREINO}_pdf_final",
-                use_container_width=True,
-            )
-        
-        with col_copy:
-            copy_button_html = f"""
-            <button onclick="copyReport_treino()" 
-                    style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                           color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                           cursor:pointer; font-size:0.9rem; font-weight:500;">
-                📋 Copiar texto
-            </button>
-            <textarea id="reportTextToCopy_treino" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-            <script>
-            function copyReport_treino() {{
-                const text = document.getElementById('reportTextToCopy_treino').value;
-                navigator.clipboard.writeText(text).then(function() {{
-                    const btn = event.target;
-                    const original = btn.innerHTML;
-                    btn.innerHTML = '✅ Copiado!';
-                    btn.style.backgroundColor = '#0e7c0e';
-                    setTimeout(function() {{
-                        btn.innerHTML = original;
-                        btn.style.backgroundColor = '#1e3a8a';
-                    }}, 2000);
-                }}, function(err) {{
-                    alert('Erro ao copiar: ' + err);
-                }});
-            }}
-            </script>
-            """
-            components.html(copy_button_html, height=50)
-    else:
-        st.caption("O PDF da capacitação aparece só no final: depois da resposta do estudante e do feedback.")
+else:
+    st.info("O PDF do treino aparece só no final: **depois** da resposta do estudante e do feedback.")
 
+with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+    _render_sketch_prompt_ui(ep, key_prefix=f"{K_TREINO}_final")
 
-# ---------- TAB 3: Estudante ----------
+# ---------- TAB 3: Estudante insere caso + feedback robusto ----------
 with tabs[2]:
     st.subheader("Estudante: inserir caso clínico")
+
 
     if f"{K_ESTUDANTE}_dados" not in st.session_state:
         st.session_state[f"{K_ESTUDANTE}_dados"] = None
         st.session_state[f"{K_ESTUDANTE}_ideal"] = ""
         st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
+        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = None
         st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
         st.session_state[f"{K_ESTUDANTE}_show_ideal"] = False
 
@@ -1023,7 +854,7 @@ with tabs[2]:
             }
             st.session_state[f"{K_ESTUDANTE}_dados"] = dados
             st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
-            st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
+            st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
 
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
@@ -1032,75 +863,7 @@ with tabs[2]:
                 origem="Estudante: inserir caso (formulário)",
                 caso=dados,
                 plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
-                feedback="",
-                resposta_estudante="",
             )
-
-        st.divider()
-        st.subheader("Finalizar")
-
-        ep = st.session_state.get("export_payload", {})
-        pronto_form = (
-            ("formulário" in str(ep.get("origem", "")).lower())
-            and bool(ep.get("caso"))
-            and bool(str(ep.get("plano_ideal", "")).strip())
-        )
-
-        if pronto_form:
-            # (c) Esboço: após avaliar caso (formulário)
-            with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
-                _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_form_final")
-
-            # PDF e Copiar lado a lado
-            pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            texto_completo = _generate_text_from_export_payload(ep)
-            eti = "caso"
-            caso = ep.get("caso")
-            if isinstance(caso, dict) and caso.get("etiologia"):
-                eti = str(caso.get("etiologia")).strip().lower()
-            
-            col_pdf, col_copy = st.columns([1, 1])
-            
-            with col_pdf:
-                st.download_button(
-                    "📄 Baixar PDF",
-                    data=pdf_bytes,
-                    file_name=f"relatorio_estudante_form_{eti}.pdf".replace(" ", "_"),
-                    mime="application/pdf",
-                    key=f"{K_ESTUDANTE}_pdf_form_final",
-                    use_container_width=True,
-                )
-            
-            with col_copy:
-                copy_button_html = f"""
-                <button onclick="copyReport_estudante_form()" 
-                        style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                               color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                               cursor:pointer; font-size:0.9rem; font-weight:500;">
-                    📋 Copiar texto
-                </button>
-                <textarea id="reportTextToCopy_estudante_form" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-                <script>
-                function copyReport_estudante_form() {{
-                    const text = document.getElementById('reportTextToCopy_estudante_form').value;
-                    navigator.clipboard.writeText(text).then(function() {{
-                        const btn = event.target;
-                        const original = btn.innerHTML;
-                        btn.innerHTML = '✅ Copiado!';
-                        btn.style.backgroundColor = '#0e7c0e';
-                        setTimeout(function() {{
-                            btn.innerHTML = original;
-                            btn.style.backgroundColor = '#1e3a8a';
-                        }}, 2000);
-                    }}, function(err) {{
-                        alert('Erro ao copiar: ' + err);
-                    }});
-                }}
-                </script>
-                """
-                components.html(copy_button_html, height=50)
-        else:
-            st.caption("Finalize clicando em **Avaliar caso (formulário)**. Aí aparecem esboço e PDF (no final).")
 
     else:
         st.caption("Descreva o caso em texto corrido. Se faltar dado, o sistema vai te perguntar o que falta.")
@@ -1117,11 +880,10 @@ with tabs[2]:
                 value="gemini-3-flash-preview",
                 key=f"{K_ESTUDANTE}_model_case_tab3",
             )
+
         with colB:
             if st.button("Analisar caso (Gemini)", key=f"{K_ESTUDANTE}_analisar_texto"):
-                if not GEMINI_API_KEY:
-                    st.warning("GEMINI_API_KEY não configurada. Configure secrets/.env para usar este modo.")
-                elif not caso_txt.strip():
+                if not caso_txt.strip():
                     st.warning("Você ainda não descreveu o caso.")
                 else:
                     try:
@@ -1129,6 +891,8 @@ with tabs[2]:
 
                         ex = GeminiCaseFromTextExtractor(model=modelo_caso)
                         parsed = ex.extract_or_ask(caso_txt)
+
+                        st.session_state[f"{K_ESTUDANTE}_parsed_texto"] = parsed
 
                         if parsed.get("status") == "NEED_MORE_INFO":
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = parsed.get("questions", "")
@@ -1140,16 +904,13 @@ with tabs[2]:
                             st.session_state[f"{K_ESTUDANTE}_dados"] = dados
                             st.session_state[f"{K_ESTUDANTE}_ideal"] = sim.avaliar(dados)
                             st.session_state[f"{K_ESTUDANTE}_perguntas_caso"] = ""
-                            st.session_state[f"{K_ESTUDANTE}_feedback"] = ""
 
-                            st.success("Caso entendido. Relatório (core) gerado.")
+                            st.success("Caso entendido. Relatório gerado pelo core.")
 
                             _set_export_payload(
                                 origem="Estudante: inserir caso (texto corrido)",
                                 caso=dados,
                                 plano_ideal=st.session_state[f"{K_ESTUDANTE}_ideal"],
-                                feedback="",
-                                resposta_estudante="",
                             )
                     except Exception as e:
                         st.error(f"Falhou ao interpretar o texto. Detalhe: {e}")
@@ -1158,29 +919,103 @@ with tabs[2]:
             st.markdown("### Perguntas do sistema (para completar o caso)")
             st.write(st.session_state[f"{K_ESTUDANTE}_perguntas_caso"])
 
-        # Mostra novamente o caso interpretado + relatório core se já existirem
+
+        # --- Resultado salvo da análise (não some ao avançar) ---
+        parsed_saved = st.session_state.get(f"{K_ESTUDANTE}_parsed_texto")
+        if parsed_saved:
+            st.markdown("### Resultado: Analisar caso (Gemini)")
+            if parsed_saved.get("status") == "NEED_MORE_INFO":
+                st.info("Faltam dados para estruturar o caso com segurança.")
+                st.write(parsed_saved.get("questions", ""))
+            else:
+                st.success("Caso estruturado (JSON) e relatório core preservados abaixo.")
+
+        # Mostra novamente o caso interpretado + relatório core se já existirem (para impressão)
         if st.session_state.get(f"{K_ESTUDANTE}_dados"):
-            st.markdown("### Caso estruturado (interno)")
+            st.markdown("### Caso interpretado (interno)")
             st.json(st.session_state[f"{K_ESTUDANTE}_dados"])
 
             st.markdown("### Relatório (core / TIME)")
             st.text(st.session_state[f"{K_ESTUDANTE}_ideal"])
 
-            st.divider()
-            st.subheader("Feedback (Gemini)")
 
-            modelo_fb = st.text_input(
-                "Modelo Gemini (feedback)",
-                value="gemini-3-flash-preview",
-                key=f"{K_ESTUDANTE}_model_feedback_tab3",
-            )
 
-            estudante_plano = st.text_area(
-                "Plano de cuidado proposto pelo estudante (texto corrido):",
-                height=180,
-                key=f"{K_ESTUDANTE}_plano_tab3",
-            )
 
+# ---------- FINAL DO PERCURSO (Estudante - formulário) ----------
+st.divider()
+st.subheader("Finalizar (PDF e esboço)")
+
+ep = st.session_state.get("export_payload", {})
+pronto_pdf = (
+    ("formulário" in str(ep.get("origem","")).lower())
+    and bool(ep.get("caso"))
+    and bool(str(ep.get("plano_ideal","")).strip())
+)
+
+if pronto_pdf:
+    pdf_bytes = _pdf_bytes_from_export_payload(ep)
+    eti = "caso"
+    caso = ep.get("caso")
+    if isinstance(caso, dict) and caso.get("etiologia"):
+        eti = str(caso.get("etiologia")).strip().lower()
+    st.download_button(
+        "📄 Baixar PDF (pronto pra imprimir)",
+        data=pdf_bytes,
+        file_name=f"relatorio_estudante_form_{eti}.pdf".replace(" ", "_"),
+        mime="application/pdf",
+        key=f"{K_ESTUDANTE}_baixar_pdf_form_final",
+        use_container_width=True,
+    )
+else:
+    st.info("No modo **Formulário**, o PDF aparece no final, após **Avaliar caso (formulário)**.")
+
+with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+    _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_form_final")
+
+# --------- IMAGENS DO ESTUDANTE (somente para constar no PDF) ---------
+if modo == "Texto corrido":
+    imgs = st.file_uploader(
+        "Anexar 1–2 imagens (opcional) — entram no PDF",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"{K_ESTUDANTE}_imgs_pdf",
+    )
+    if imgs:
+        if len(imgs) > 2:
+            st.warning("Máximo de 2 imagens. Vou usar apenas as 2 primeiras.")
+            imgs = imgs[:2]
+        images_payload = [{"name": f.name, "bytes": f.getvalue()} for f in imgs]
+        _set_export_payload(images=images_payload)
+        st.caption("As imagens não são analisadas; ficam apenas no relatório PDF.")
+        for f in imgs:
+            st.image(f, caption=f.name, use_container_width=True)
+
+    st.divider()
+    st.subheader("Feedback robusto (Gemini)")
+
+    if not st.session_state.get(f"{K_ESTUDANTE}_dados"):
+        st.info("Primeiro finalize o caso (Formulário ou Texto corrido). Depois escreva seu plano e gere o feedback.")
+    else:
+        modelo_fb = st.text_input(
+            "Modelo Gemini (feedback)",
+            value="gemini-3-flash-preview",
+            key=f"{K_ESTUDANTE}_model_feedback_tab3",
+        )
+
+        st.markdown("### Plano de cuidado proposto pelo estudante (texto corrido)")
+        estudante_plano = st.text_area(
+            "Explique seu raciocínio e o plano (TIME + condutas específicas):",
+            height=180,
+            key=f"{K_ESTUDANTE}_plano_tab3",
+        )
+
+        colx, coly = st.columns(2)
+        with colx:
+            if st.button("Mostrar plano ideal (core)", key=f"{K_ESTUDANTE}_mostrar_ideal_tab3"):
+                st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
+                st.rerun()
+
+        with coly:
             if st.button("Gerar feedback (Gemini)", key=f"{K_ESTUDANTE}_gerar_feedback_tab3"):
                 if not estudante_plano.strip():
                     st.warning("Você ainda não escreveu o plano.")
@@ -1193,84 +1028,104 @@ with tabs[2]:
                             student_plan=estudante_plano,
                             ideal_plan=st.session_state[f"{K_ESTUDANTE}_ideal"],
                         )
+
                         st.session_state[f"{K_ESTUDANTE}_feedback"] = feedback
+                        st.session_state["feedback_estudante"] = feedback
+
+                        # após gerar feedback, também mostrar o plano ideal automaticamente
+                        st.session_state[f"{K_ESTUDANTE}_show_ideal"] = True
 
                         _set_export_payload(
-                            origem="Estudante: inserir caso (texto corrido)",
+                            origem="Estudante: inserir caso",
                             caso=st.session_state.get(f"{K_ESTUDANTE}_dados"),
                             resposta_estudante=estudante_plano,
                             plano_ideal=st.session_state.get(f"{K_ESTUDANTE}_ideal", ""),
                             feedback=feedback,
                         )
 
-                        st.markdown("### Feedback ao estudante")
-                        st.write(feedback)
+                        st.rerun()
+
                     except Exception as e:
-                        st.error(f"Falhou ao gerar feedback. Detalhe: {e}")
+                        st.error(f"Falhou ao gerar feedback. Verifique GEMINI_API_KEY no .env. Detalhe: {e}")
 
-        # (d) Finalizar: esboço após avaliar caso + feedback; PDF por último
-        st.divider()
-        st.subheader("Finalizar")
+        # --------- Resultados persistentes (não somem ao clicar em outros botões) ---------
+        feedback_salvo = st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+        if feedback_salvo:
+            if str(feedback_salvo).strip().startswith("PRECISO DE MAIS DADOS:"):
+                st.warning("Seu texto ainda está incompleto. Responda o que falta e rode novamente.")
+            st.markdown("### Retorno do professor (Gemini)")
+            st.write(feedback_salvo)
 
-        ep = st.session_state.get("export_payload", {})
-        pronto_texto = (
-            ("texto" in str(ep.get("origem", "")).lower())
-            and bool(ep.get("caso"))
-            and bool(str(ep.get("resposta_estudante", "")).strip())
-            and bool(str(ep.get("feedback", "")).strip())
-        )
+        if st.session_state.get(f"{K_ESTUDANTE}_show_ideal"):
+            st.info("Plano ideal já está no relatório (acima).")
 
-        if pronto_texto:
-            with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
-                _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_text_final")
 
-            pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            texto_completo = _generate_text_from_export_payload(ep)
-            eti = "caso"
-            caso = ep.get("caso")
-            if isinstance(caso, dict) and caso.get("etiologia"):
-                eti = str(caso.get("etiologia")).strip().lower()
-            
-            col_pdf, col_copy = st.columns([1, 1])
-            
-            with col_pdf:
-                st.download_button(
-                    "📄 Baixar PDF",
-                    data=pdf_bytes,
-                    file_name=f"relatorio_estudante_texto_{eti}.pdf".replace(" ", "_"),
-                    mime="application/pdf",
-                    key=f"{K_ESTUDANTE}_pdf_text_final",
-                    use_container_width=True,
-                )
-            
-            with col_copy:
-                copy_button_html = f"""
-                <button onclick="copyReport_estudante_texto()" 
-                        style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                               color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                               cursor:pointer; font-size:0.9rem; font-weight:500;">
-                    📋 Copiar texto
-                </button>
-                <textarea id="reportTextToCopy_estudante_texto" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-                <script>
-                function copyReport_estudante_texto() {{
-                    const text = document.getElementById('reportTextToCopy_estudante_texto').value;
-                    navigator.clipboard.writeText(text).then(function() {{
-                        const btn = event.target;
-                        const original = btn.innerHTML;
-                        btn.innerHTML = '✅ Copiado!';
-                        btn.style.backgroundColor = '#0e7c0e';
-                        setTimeout(function() {{
-                            btn.innerHTML = original;
-                            btn.style.backgroundColor = '#1e3a8a';
-                        }}, 2000);
-                    }}, function(err) {{
-                        alert('Erro ao copiar: ' + err);
-                    }});
-                }}
-                </script>
-                """
-                components.html(copy_button_html, height=50)
-        else:
-            st.caption("No modo **Texto corrido**, o esboço e o PDF aparecem só no final (depois do plano e do feedback).")
+# ---------- FINAL DO PERCURSO (Estudante - texto corrido) ----------
+st.divider()
+st.subheader("Finalizar (PDF e esboço)")
 
+ep = st.session_state.get("export_payload", {})
+pronto_pdf = (
+    ("texto" in str(ep.get("origem","")).lower() or "estudante" in str(ep.get("origem","")).lower())
+    and bool(ep.get("caso"))
+    and bool(str(ep.get("resposta_estudante","")).strip())
+    and bool(str(ep.get("feedback","")).strip())
+)
+
+if pronto_pdf:
+    pdf_bytes = _pdf_bytes_from_export_payload(ep)
+    eti = "caso"
+    caso = ep.get("caso")
+    if isinstance(caso, dict) and caso.get("etiologia"):
+        eti = str(caso.get("etiologia")).strip().lower()
+    st.download_button(
+        "📄 Baixar PDF (pronto pra imprimir)",
+        data=pdf_bytes,
+        file_name=f"relatorio_estudante_{eti}.pdf".replace(" ", "_"),
+        mime="application/pdf",
+        key=f"{K_ESTUDANTE}_baixar_pdf_text_final",
+        use_container_width=True,
+    )
+else:
+    st.info("No modo **Texto corrido**, o PDF aparece só no final: depois do **plano do estudante** e do **feedback**.")
+
+with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
+    _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_text_final")
+
+    # ---------- EXPORTAR RELATÓRIO (PDF) ----------
+    # st.divider()
+    # st.subheader("Exportar relatório (PDF)")
+    #
+    # Dados necessários
+    # caso = st.session_state.get(f"{K_ESTUDANTE}_dados")
+    # plano_ideal = st.session_state.get(f"{K_ESTUDANTE}_ideal", "")
+    # resposta_estudante = st.session_state.get(f"{K_ESTUDANTE}_plano_tab3", "")
+    # feedback_pdf = st.session_state.get("feedback_estudante") or st.session_state.get(f"{K_ESTUDANTE}_feedback", "")
+    #
+    # pronto = bool(caso) and bool(plano_ideal.strip()) and bool(str(resposta_estudante).strip()) and bool(str(feedback_pdf).strip())
+    #
+    # if not pronto:
+    #     st.info("Para exportar o PDF, complete: caso + resposta do estudante + feedback.")
+    # else:
+    #     if st.button("Gerar PDF", key=f"{K_ESTUDANTE}_pdf_btn"):
+    #         # Nome amigável
+    #         ts = datetime.now().strftime("%Y%m%d-%H%M")
+    #         eti = (caso.get("etiologia") if isinstance(caso, dict) else "caso") or "caso"
+    #         nome_arquivo = f"relatorio_{eti}_{ts}.pdf".replace(" ", "_")
+    #
+    #         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+    #             gerar_pdf_relatorio(
+    #                 path=tmp.name,
+    #                 caso=caso,
+    #                 resposta_estudante=str(resposta_estudante),
+    #                 plano_ideal=str(plano_ideal),
+    #                 feedback=str(feedback_pdf),
+    #             )
+    #             with open(tmp.name, "rb") as f:
+    #                 st.download_button(
+    #                     label="📄 Baixar PDF",
+    #                     data=f,
+    #                     file_name=nome_arquivo,
+    #                     mime="application/pdf",
+    #                     key=f"{K_ESTUDANTE}_pdf_download",
+    #                 )

@@ -954,6 +954,8 @@ with tabs[1]:
             </script>
             """
             components.html(copy_button_html, height=50)
+            width="stretch",
+        )
     else:
         st.caption("O PDF da capacitação aparece só no final: depois da resposta do estudante e do feedback.")
 

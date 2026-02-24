@@ -91,7 +91,6 @@ st.markdown("<div style='height:25px;'></div>", unsafe_allow_html=True)
 
 import streamlit as st
 import os
-import streamlit.components.v1 as components
 
 # ==============================
 # CONTROLE DE ACESSO (DESATIVADO)
@@ -142,9 +141,9 @@ if not GEMINI_API_KEY:
     )
 
 
-# st.set_page_config(page_title="Capacita TIMERS", layout="centered")  # já definido no topo
+# st.set_page_config(page_title="Simulador TIMERS", layout="centered")  # já definido no topo
 st.markdown(
-    "<h3>Capacita TIMERS – Feridas Crônicas</h3>",
+    "<h2>Simulador TIMERS – Feridas Crônicas. PET G10 UFPel</h3>",
     unsafe_allow_html=True
 )
 
@@ -375,7 +374,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
     resposta = ep.get("resposta_estudante") or ""
     plano_ideal = ep.get("plano_ideal") or ""
     feedback = ep.get("feedback") or ""
-    sketch_prompt = ep.get("sketch_prompt") or ""
     images = ep.get("images") or []  # lista de dicts: {name, bytes}
 
     if isinstance(caso, dict):
@@ -395,9 +393,6 @@ def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
         y = draw_block("Plano ideal (core / TIME):", plano_ideal, y)
     if str(feedback).strip():
         y = draw_block("Feedback (Gemini):", feedback, y)
-
-    if str(sketch_prompt).strip():
-        y = draw_block("Prompt de esboço (PT-BR):", sketch_prompt, y)
 
 
     # --- Imagens anexadas (para constar no relatório) ---
@@ -510,11 +505,7 @@ ENTREGA:
 
 
 def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
-    """UI padrão (wrap + download).
-
-    Regra:
-    - O prompt só entra no PDF se o usuário ATIVAR (checkbox) neste fluxo.
-    """
+    """UI padrão (wrap + download). Só aparece quando há conteúdo suficiente."""
     # Exigência mínima: ter caso ou plano ideal/feedback (alguma coisa concreta)
     tem_algo = any([
         bool(ep.get("caso")),
@@ -527,27 +518,10 @@ def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
         st.info("Gere algum conteúdo primeiro para liberar o prompt de esboço.")
         return
 
-    flag_key = f"{key_prefix}_sketch_enabled"
-    enabled = st.checkbox(
-        "Incluir prompt de esboço no PDF (opcional)",
-        value=bool(st.session_state.get(flag_key, False)),
-        key=flag_key,
-    )
-
-    if not enabled:
-        # Garante que o PDF NÃO inclua esboço se o usuário não ativar.
-        ep.pop("sketch_prompt", None)
-        st.caption("Ative a opção acima se quiser gerar o prompt e incluí-lo no PDF.")
-        return
-
     prompt_txt = _build_sketch_prompt(ep).strip()
     if not prompt_txt:
         st.info("Ainda não há conteúdo suficiente para montar um prompt de esboço.")
-        ep.pop("sketch_prompt", None)
         return
-
-    # Guarda no export_payload para que o PDF inclua (apenas quando enabled=True).
-    ep["sketch_prompt"] = prompt_txt
 
     st.text_area(
         "Prompt do esboço (PT-BR) — copie e cole no seu gerador de imagens",
@@ -555,116 +529,16 @@ def _render_sketch_prompt_ui(ep: dict, key_prefix: str):
         height=220,
         key=f"{key_prefix}_sketch_text",
     )
-    
-    # Botões de download e copiar lado a lado
-    col_download_sketch, col_copy_sketch = st.columns([1, 1])
-    
-    with col_download_sketch:
-        st.download_button(
-            "💾 Baixar prompt (.txt)",
-            data=prompt_txt.encode("utf-8"),
-            file_name="prompt_esboco.txt",
-            mime="text/plain; charset=utf-8",
-            key=f"{key_prefix}_sketch_download",
-            use_container_width=True,
-        )
-    
-    with col_copy_sketch:
-        # Botão de copiar o prompt do esboço (azul marinho)
-        copy_sketch_html = f"""
-        <button onclick="copySketchPrompt_{key_prefix}()" 
-                style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                       color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                       cursor:pointer; font-size:0.9rem; font-weight:500;">
-            📋 Copiar prompt
-        </button>
-        <textarea id="sketchTextToCopy_{key_prefix}" style="position:absolute; left:-9999px;">{prompt_txt}</textarea>
-        <script>
-        function copySketchPrompt_{key_prefix}() {{
-            const text = document.getElementById('sketchTextToCopy_{key_prefix}').value;
-            navigator.clipboard.writeText(text).then(function() {{
-                const btn = event.target;
-                const original = btn.innerHTML;
-                btn.innerHTML = '✅ Copiado!';
-                btn.style.backgroundColor = '#0e7c0e';
-                setTimeout(function() {{
-                    btn.innerHTML = original;
-                    btn.style.backgroundColor = '#1e3a8a';
-                }}, 2000);
-            }}, function(err) {{
-                alert('Erro ao copiar: ' + err);
-            }});
-        }}
-        </script>
-        """
-        components.html(copy_sketch_html, height=50)
+    st.download_button(
+        "Baixar prompt (.txt)",
+        data=prompt_txt,
+        file_name="prompt_esboco.txt",
+        mime="text/plain",
+        key=f"{key_prefix}_sketch_download",
+    )
 
 
-def _generate_text_from_export_payload(ep: dict) -> str:
-    """Gera texto completo formatado a partir do export_payload para copiar."""
-    lines = []
-    lines.append("=" * 60)
-    lines.append("RELATÓRIO TIMERS - FERIDAS CRÔNICAS")
-    lines.append("=" * 60)
-    lines.append("")
-    
-    origem = ep.get("origem", "")
-    if origem:
-        lines.append(f"Origem: {origem}")
-        lines.append("")
-    
-    caso = ep.get("caso")
-    if caso:
-        lines.append("CASO CLÍNICO:")
-        lines.append("-" * 60)
-        if isinstance(caso, dict):
-            for k, v in caso.items():
-                lines.append(f"  {k}: {v}")
-        else:
-            lines.append(str(caso))
-        lines.append("")
-    
-    descricao = ep.get("descricao_visual", "")
-    if descricao:
-        lines.append("DESCRIÇÃO VISUAL:")
-        lines.append("-" * 60)
-        lines.append(descricao)
-        lines.append("")
-    
-    plano = ep.get("plano_ideal", "")
-    if plano:
-        lines.append("PLANO DE CUIDADO IDEAL (TIMERS):")
-        lines.append("-" * 60)
-        lines.append(plano)
-        lines.append("")
-    
-    resposta = ep.get("resposta_estudante", "")
-    if resposta:
-        lines.append("RESPOSTA DO ESTUDANTE:")
-        lines.append("-" * 60)
-        lines.append(resposta)
-        lines.append("")
-    
-    feedback = ep.get("feedback", "")
-    if feedback:
-        lines.append("FEEDBACK:")
-        lines.append("-" * 60)
-        lines.append(feedback)
-        lines.append("")
-    
-    sketch = ep.get("sketch_prompt", "")
-    if sketch:
-        lines.append("PROMPT DE ESBOÇO:")
-        lines.append("-" * 60)
-        lines.append(sketch)
-        lines.append("")
-    
-    lines.append("=" * 60)
-    lines.append("Gerado pelo Simulador TIMERS - UFPel")
-    lines.append("=" * 60)
-    
-    return "\n".join(lines)
-tabs = st.tabs(["Simulador (manual)", "Capacitação (Gemini)", "Estudante: inserir caso"])
+tabs = st.tabs(["Simulador (manual)", "Treino (Gemini)", "Estudante: inserir caso"])
 
 # ---------- TAB 1: Manual ----------
 with tabs[0]:
@@ -727,61 +601,27 @@ with tabs[0]:
         with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
             _render_sketch_prompt_ui(ep, key_prefix=f"{K_MANUAL}_final")
 
-        # PDF e Copiar lado a lado
+        # PDF SEMPRE POR ÚLTIMO
         pdf_bytes = _pdf_bytes_from_export_payload(ep)
-        texto_completo = _generate_text_from_export_payload(ep)
         eti = "caso"
         caso = ep.get("caso")
         if isinstance(caso, dict) and caso.get("etiologia"):
             eti = str(caso.get("etiologia")).strip().lower()
-        
-        col_pdf, col_copy = st.columns([1, 1])
-        
-        with col_pdf:
-            st.download_button(
-                "📄 Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"relatorio_manual_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_MANUAL}_pdf_final",
-                use_container_width=True,
-            )
-        
-        with col_copy:
-            copy_button_html = f"""
-            <button onclick="copyReport_manual()" 
-                    style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                           color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                           cursor:pointer; font-size:0.9rem; font-weight:500;">
-                📋 Copiar texto
-            </button>
-            <textarea id="reportTextToCopy_manual" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-            <script>
-            function copyReport_manual() {{
-                const text = document.getElementById('reportTextToCopy_manual').value;
-                navigator.clipboard.writeText(text).then(function() {{
-                    const btn = event.target;
-                    const original = btn.innerHTML;
-                    btn.innerHTML = '✅ Copiado!';
-                    btn.style.backgroundColor = '#0e7c0e';
-                    setTimeout(function() {{
-                        btn.innerHTML = original;
-                        btn.style.backgroundColor = '#1e3a8a';
-                    }}, 2000);
-                }}, function(err) {{
-                    alert('Erro ao copiar: ' + err);
-                }});
-            }}
-            </script>
-            """
-            components.html(copy_button_html, height=50)
+        st.download_button(
+            "📄 Baixar PDF (pronto pra imprimir)",
+            data=pdf_bytes,
+            file_name=f"relatorio_manual_{eti}.pdf".replace(" ", "_"),
+            mime="application/pdf",
+            key=f"{K_MANUAL}_pdf_final",
+            width="stretch",
+        )
     else:
         st.info("Primeiro clique em **Avaliar (manual)**. Depois aparecem esboço e PDF (no final).")
 
 
 # ---------- TAB 2: Treino ----------
 with tabs[1]:
-    st.subheader("Capacitação: gerar caso via Gemini + resposta do estudante + feedback")
+    st.subheader("Treino: gerar caso via Gemini + resposta do estudante + feedback")
 
     if f"{K_TREINO}_case" not in st.session_state:
         st.session_state[f"{K_TREINO}_case"] = None
@@ -820,7 +660,7 @@ with tabs[1]:
                 st.session_state[f"{K_TREINO}_feedback"] = ""
 
                 _set_export_payload(
-                    origem="Capacitação (Gemini)",
+                    origem="Treino (Gemini)",
                     caso=out.scenario,
                     descricao_visual=out.visual_description,
                     plano_ideal=ideal,
@@ -835,7 +675,7 @@ with tabs[1]:
 
     case = st.session_state.get(f"{K_TREINO}_case")
     if not case:
-        st.info("Clique em **Gerar caso (Gemini)** para iniciar a capacitação.")
+        st.info("Clique em **Gerar caso (Gemini)** para iniciar o treino.")
     else:
         st.markdown("### Cenário (JSON)")
         st.json(case)
@@ -874,7 +714,7 @@ with tabs[1]:
                         st.session_state[f"{K_TREINO}_feedback"] = feedback
 
                         _set_export_payload(
-                            origem="Capacitação (Gemini)",
+                            origem="Treino (Gemini)",
                             caso=case,
                             descricao_visual=st.session_state.get(f"{K_TREINO}_visual", ""),
                             resposta_estudante=estudante_plano,
@@ -892,15 +732,15 @@ with tabs[1]:
     st.subheader("Finalizar")
 
     ep = st.session_state.get("export_payload", {})
-    tem_caso_treino = (str(ep.get("origem", "")).startswith("Capacitação") and bool(ep.get("caso")))
+    tem_caso_treino = (str(ep.get("origem", "")).startswith("Treino") and bool(ep.get("caso")))
 
     if tem_caso_treino:
         with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
             _render_sketch_prompt_ui(ep, key_prefix=f"{K_TREINO}_final")
     else:
-        st.info("Gere um caso na capacitação para liberar o prompt de esboço.")
+        st.info("Gere um caso no treino para liberar o prompt de esboço.")
 
-    # PDF da capacitação só no fim (depois de feedback)
+    # PDF do treino só no fim (depois de feedback)
     pronto_pdf = (
         tem_caso_treino
         and bool(str(ep.get("resposta_estudante", "")).strip())
@@ -908,54 +748,20 @@ with tabs[1]:
     )
     if pronto_pdf:
         pdf_bytes = _pdf_bytes_from_export_payload(ep)
-        texto_completo = _generate_text_from_export_payload(ep)
         eti = "caso"
         caso = ep.get("caso")
         if isinstance(caso, dict) and caso.get("etiologia"):
             eti = str(caso.get("etiologia")).strip().lower()
-        
-        col_pdf, col_copy = st.columns([1, 1])
-        
-        with col_pdf:
-            st.download_button(
-                "📄 Baixar PDF",
-                data=pdf_bytes,
-                file_name=f"relatorio_capacitacao_{eti}.pdf".replace(" ", "_"),
-                mime="application/pdf",
-                key=f"{K_TREINO}_pdf_final",
-                use_container_width=True,
-            )
-        
-        with col_copy:
-            copy_button_html = f"""
-            <button onclick="copyReport_treino()" 
-                    style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                           color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                           cursor:pointer; font-size:0.9rem; font-weight:500;">
-                📋 Copiar texto
-            </button>
-            <textarea id="reportTextToCopy_treino" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-            <script>
-            function copyReport_treino() {{
-                const text = document.getElementById('reportTextToCopy_treino').value;
-                navigator.clipboard.writeText(text).then(function() {{
-                    const btn = event.target;
-                    const original = btn.innerHTML;
-                    btn.innerHTML = '✅ Copiado!';
-                    btn.style.backgroundColor = '#0e7c0e';
-                    setTimeout(function() {{
-                        btn.innerHTML = original;
-                        btn.style.backgroundColor = '#1e3a8a';
-                    }}, 2000);
-                }}, function(err) {{
-                    alert('Erro ao copiar: ' + err);
-                }});
-            }}
-            </script>
-            """
-            components.html(copy_button_html, height=50)
+        st.download_button(
+            "📄 Baixar PDF do treino (pronto pra imprimir)",
+            data=pdf_bytes,
+            file_name=f"relatorio_treino_{eti}.pdf".replace(" ", "_"),
+            mime="application/pdf",
+            key=f"{K_TREINO}_pdf_final",
+            width="stretch",
+        )
     else:
-        st.caption("O PDF da capacitação aparece só no final: depois da resposta do estudante e do feedback.")
+        st.caption("O PDF do treino aparece só no final: depois da resposta do estudante e do feedback.")
 
 
 # ---------- TAB 3: Estudante ----------
@@ -1051,54 +857,20 @@ with tabs[2]:
             with st.expander("🖼️ Prompt de esboço (opcional)", expanded=False):
                 _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_form_final")
 
-            # PDF e Copiar lado a lado
+            # PDF SEMPRE POR ÚLTIMO
             pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            texto_completo = _generate_text_from_export_payload(ep)
             eti = "caso"
             caso = ep.get("caso")
             if isinstance(caso, dict) and caso.get("etiologia"):
                 eti = str(caso.get("etiologia")).strip().lower()
-            
-            col_pdf, col_copy = st.columns([1, 1])
-            
-            with col_pdf:
-                st.download_button(
-                    "📄 Baixar PDF",
-                    data=pdf_bytes,
-                    file_name=f"relatorio_estudante_form_{eti}.pdf".replace(" ", "_"),
-                    mime="application/pdf",
-                    key=f"{K_ESTUDANTE}_pdf_form_final",
-                    use_container_width=True,
-                )
-            
-            with col_copy:
-                copy_button_html = f"""
-                <button onclick="copyReport_estudante_form()" 
-                        style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                               color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                               cursor:pointer; font-size:0.9rem; font-weight:500;">
-                    📋 Copiar texto
-                </button>
-                <textarea id="reportTextToCopy_estudante_form" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-                <script>
-                function copyReport_estudante_form() {{
-                    const text = document.getElementById('reportTextToCopy_estudante_form').value;
-                    navigator.clipboard.writeText(text).then(function() {{
-                        const btn = event.target;
-                        const original = btn.innerHTML;
-                        btn.innerHTML = '✅ Copiado!';
-                        btn.style.backgroundColor = '#0e7c0e';
-                        setTimeout(function() {{
-                            btn.innerHTML = original;
-                            btn.style.backgroundColor = '#1e3a8a';
-                        }}, 2000);
-                    }}, function(err) {{
-                        alert('Erro ao copiar: ' + err);
-                    }});
-                }}
-                </script>
-                """
-                components.html(copy_button_html, height=50)
+            st.download_button(
+                "📄 Baixar PDF (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_estudante_form_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_ESTUDANTE}_pdf_form_final",
+                width="stretch",
+            )
         else:
             st.caption("Finalize clicando em **Avaliar caso (formulário)**. Aí aparecem esboço e PDF (no final).")
 
@@ -1225,52 +997,18 @@ with tabs[2]:
                 _render_sketch_prompt_ui(ep, key_prefix=f"{K_ESTUDANTE}_text_final")
 
             pdf_bytes = _pdf_bytes_from_export_payload(ep)
-            texto_completo = _generate_text_from_export_payload(ep)
             eti = "caso"
             caso = ep.get("caso")
             if isinstance(caso, dict) and caso.get("etiologia"):
                 eti = str(caso.get("etiologia")).strip().lower()
-            
-            col_pdf, col_copy = st.columns([1, 1])
-            
-            with col_pdf:
-                st.download_button(
-                    "📄 Baixar PDF",
-                    data=pdf_bytes,
-                    file_name=f"relatorio_estudante_texto_{eti}.pdf".replace(" ", "_"),
-                    mime="application/pdf",
-                    key=f"{K_ESTUDANTE}_pdf_text_final",
-                    use_container_width=True,
-                )
-            
-            with col_copy:
-                copy_button_html = f"""
-                <button onclick="copyReport_estudante_texto()" 
-                        style="width:100%; padding:0.5rem 1rem; background-color:#1e3a8a; 
-                               color:white; border:1px solid #2563eb; border-radius:0.5rem; 
-                               cursor:pointer; font-size:0.9rem; font-weight:500;">
-                    📋 Copiar texto
-                </button>
-                <textarea id="reportTextToCopy_estudante_texto" style="position:absolute; left:-9999px;">{texto_completo}</textarea>
-                <script>
-                function copyReport_estudante_texto() {{
-                    const text = document.getElementById('reportTextToCopy_estudante_texto').value;
-                    navigator.clipboard.writeText(text).then(function() {{
-                        const btn = event.target;
-                        const original = btn.innerHTML;
-                        btn.innerHTML = '✅ Copiado!';
-                        btn.style.backgroundColor = '#0e7c0e';
-                        setTimeout(function() {{
-                            btn.innerHTML = original;
-                            btn.style.backgroundColor = '#1e3a8a';
-                        }}, 2000);
-                    }}, function(err) {{
-                        alert('Erro ao copiar: ' + err);
-                    }});
-                }}
-                </script>
-                """
-                components.html(copy_button_html, height=50)
+            st.download_button(
+                "📄 Baixar PDF (pronto pra imprimir)",
+                data=pdf_bytes,
+                file_name=f"relatorio_estudante_texto_{eti}.pdf".replace(" ", "_"),
+                mime="application/pdf",
+                key=f"{K_ESTUDANTE}_pdf_text_final",
+                width="stretch",
+            )
         else:
             st.caption("No modo **Texto corrido**, o esboço e o PDF aparecem só no final (depois do plano e do feedback).")
 
