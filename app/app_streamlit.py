@@ -672,7 +672,96 @@ def _generate_text_from_export_payload(ep: dict) -> str:
     lines.append("=" * 60)
     
     return "\n".join(lines)
-tabs = st.tabs(["Simulador (manual)", "Capacitação (Gemini)", "Estudante: inserir caso"])
+
+# ==============================
+# ESTILO DAS ABAS PRINCIPAIS
+# ==============================
+st.markdown(
+    """
+    <style>
+    /* ── Container geral das abas ── */
+    div[data-testid="stTabs"] > div:first-child {
+        gap: 10px !important;
+        margin-bottom: 0.5rem;
+    }
+
+    /* ── Cada botão de aba ── */
+    div[data-testid="stTabs"] button[role="tab"] {
+        flex: 1 1 0;
+        border-radius: 12px 12px 0 0 !important;
+        padding: 0.65rem 0.5rem 0.55rem !important;
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.01em;
+        border: 2px solid transparent !important;
+        border-bottom: none !important;
+        transition: all 0.18s ease;
+        line-height: 1.35 !important;
+        white-space: normal !important;
+        text-align: center !important;
+    }
+
+    /* ── Aba 1 — Simulador (manual) — azul-marinho ── */
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(1) {
+        background: #dbeafe !important;
+        color: #1e3a8a !important;
+        border-color: #93c5fd !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(1):hover {
+        background: #bfdbfe !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]:nth-child(1) {
+        background: #1e3a8a !important;
+        color: #ffffff !important;
+        border-color: #1e3a8a !important;
+        box-shadow: 0 -3px 0 0 #2563eb inset;
+    }
+
+    /* ── Aba 2 — Capacitação (Gemini) — verde-esmeralda ── */
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(2) {
+        background: #d1fae5 !important;
+        color: #065f46 !important;
+        border-color: #6ee7b7 !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(2):hover {
+        background: #a7f3d0 !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]:nth-child(2) {
+        background: #065f46 !important;
+        color: #ffffff !important;
+        border-color: #065f46 !important;
+        box-shadow: 0 -3px 0 0 #10b981 inset;
+    }
+
+    /* ── Aba 3 — Estudante — violeta ── */
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(3) {
+        background: #ede9fe !important;
+        color: #4c1d95 !important;
+        border-color: #c4b5fd !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"]:nth-child(3):hover {
+        background: #ddd6fe !important;
+    }
+    div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]:nth-child(3) {
+        background: #4c1d95 !important;
+        color: #ffffff !important;
+        border-color: #4c1d95 !important;
+        box-shadow: 0 -3px 0 0 #7c3aed inset;
+    }
+
+    /* ── Painel de conteúdo da aba ── */
+    div[data-testid="stTabs"] > div:last-child {
+        border: 2px solid #e2e8f0;
+        border-radius: 0 0 12px 12px;
+        padding: 1.2rem 1rem 1rem !important;
+        background: #ffffff;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+tabs = st.tabs(["🩺 Simulador (manual)", "🤖 Capacitação (Gemini)", "👩‍🎓 Estudante: inserir caso"])
 
 # ---------- TAB 1: Manual ----------
 with tabs[0]:
