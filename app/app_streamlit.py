@@ -269,7 +269,15 @@ if "export_payload" not in st.session_state:
     }
 
 def _set_export_payload(**kwargs):
-    st.session_state["export_payload"].update({k: v for k, v in kwargs.items() if v is not None})
+    # "images" só é sobrescrito se explicitamente passado; preserva imagens geradas entre chamadas.
+    current = st.session_state["export_payload"]
+    for k, v in kwargs.items():
+        if v is None:
+            continue
+        if k == "images" and not v and current.get("images"):
+            # Não apaga imagens já geradas quando o caller passa images=[]
+            continue
+        current[k] = v
 
 
 def _pdf_bytes_from_export_payload(ep: dict) -> bytes:
@@ -842,6 +850,102 @@ with tabs[1]:
 
         st.markdown("### Descrição visual")
         st.write(st.session_state.get(f"{K_TREINO}_visual", ""))
+
+        # ----------------------------------------------------------------
+        # GERAÇÃO DE IMAGEM DA FERIDA (IA)
+        # ----------------------------------------------------------------
+        st.markdown("### 🖼️ Imagem da ferida (IA)")
+
+        img_provider = st.selectbox(
+            "Provedor de imagem",
+            ["Gemini Imagen 3", "fal.ai (FLUX.1)"],
+            key=f"{K_TREINO}_img_provider",
+            help=(
+                "Gemini Imagen 3: usa a mesma chave GEMINI_API_KEY já configurada.\n"
+                "fal.ai (FLUX.1): requer FAL_KEY em Secrets/.env e pacote fal-client."
+            ),
+        )
+
+        if st.button("🎨 Gerar imagem da ferida", key=f"{K_TREINO}_gerar_img"):
+            from src.image_generator import (
+                generate_wound_image_gemini,
+                generate_wound_image_fal,
+            )
+
+            with st.spinner("Gerando imagem — aguarde alguns segundos…"):
+                try:
+                    if img_provider == "Gemini Imagen 3":
+                        if not GEMINI_API_KEY:
+                            st.warning("GEMINI_API_KEY não configurada. Configure Secrets/.env.")
+                        else:
+                            img_bytes = generate_wound_image_gemini(
+                                scenario=st.session_state[f"{K_TREINO}_case"],
+                                visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+                                api_key=GEMINI_API_KEY,
+                            )
+                            if img_bytes:
+                                st.session_state[f"{K_TREINO}_wound_img"] = img_bytes
+                                # Salva no export_payload para incluir no PDF
+                                ep_img = st.session_state.get("export_payload", {})
+                                ep_img["images"] = [{"name": "ferida_gerada.png", "bytes": img_bytes}]
+                                st.success("✅ Imagem gerada e incluída no relatório PDF!")
+                            else:
+                                st.warning(
+                                    "O Gemini não retornou imagem (possível bloqueio de conteúdo). "
+                                    "Tente o provedor fal.ai (FLUX.1) como alternativa."
+                                )
+
+                    else:  # fal.ai
+                        try:
+                            FAL_KEY = (
+                                st.secrets.get("FAL_KEY")  # type: ignore[attr-defined]
+                                if hasattr(st, "secrets") else None
+                            ) or os.getenv("FAL_KEY", "")
+                            FAL_KEY = (FAL_KEY or "").strip() or None
+                        except Exception:
+                            FAL_KEY = os.getenv("FAL_KEY", "").strip() or None
+
+                        if not FAL_KEY:
+                            st.warning(
+                                "FAL_KEY não configurada. "
+                                "Adicione FAL_KEY em Secrets/.env para usar o fal.ai."
+                            )
+                        else:
+                            img_bytes = generate_wound_image_fal(
+                                scenario=st.session_state[f"{K_TREINO}_case"],
+                                visual_description=st.session_state.get(f"{K_TREINO}_visual", ""),
+                                api_key=FAL_KEY,
+                            )
+                            if img_bytes:
+                                st.session_state[f"{K_TREINO}_wound_img"] = img_bytes
+                                ep_img = st.session_state.get("export_payload", {})
+                                ep_img["images"] = [{"name": "ferida_gerada.png", "bytes": img_bytes}]
+                                st.success("✅ Imagem gerada e incluída no relatório PDF!")
+                            else:
+                                st.warning("fal.ai não retornou imagem. Verifique a chave e tente novamente.")
+
+                except ImportError as e:
+                    st.error(f"Dependência não instalada: {e}")
+                except Exception as e:
+                    st.error(f"Erro ao gerar imagem: {e}")
+
+        # Exibe imagem se já foi gerada (persiste durante a sessão)
+        wound_img = st.session_state.get(f"{K_TREINO}_wound_img")
+        if wound_img:
+            st.image(
+                wound_img,
+                caption="Imagem didática da ferida (gerada por IA) — incluída no PDF",
+                use_column_width=True,
+            )
+            st.download_button(
+                "💾 Baixar imagem (.png)",
+                data=wound_img,
+                file_name="ferida_caso.png",
+                mime="image/png",
+                key=f"{K_TREINO}_download_img",
+                use_container_width=True,
+            )
+        # ----------------------------------------------------------------
 
         st.markdown("### Resposta do estudante")
         estudante_plano = st.text_area(
