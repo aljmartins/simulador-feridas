@@ -15,8 +15,114 @@ Uso básico:
 
 import os
 import base64
+import io
 import requests
 from typing import Optional
+
+
+# ---------------------------------------------------------------------------
+# Mapeamentos PT-BR para a legenda sobreposta (Pillow)
+# ---------------------------------------------------------------------------
+_ETIOLOGY_LABEL = {
+    "Venosa":    "Úlcera Venosa",
+    "Arterial":  "Úlcera Arterial",
+    "Diabética": "Úlcera Diabética",
+    "Pressão":   "Lesão por Pressão",
+}
+_TISSUE_LABEL = {
+    "Necrose":    "Tecido: Necrose",
+    "Esfacelo":   "Tecido: Esfacelo",
+    "Granulação": "Tecido: Granulação",
+}
+_EXUDATE_LABEL = {
+    "Seco":          "Exsudato: Seco",
+    "Equilibrado":   "Exsudato: Equilibrado",
+    "Muito Molhado": "Exsudato: Abundante",
+}
+
+
+def _add_caption_bar(img_bytes: bytes, scenario: dict) -> bytes:
+    """
+    Adiciona uma barra de legenda em PT-BR na parte inferior da imagem.
+    A imagem original não é reprocessada — apenas recebe uma faixa extra.
+
+    Requer: pillow (já presente no requirements.txt como 'pillow').
+    """
+    from PIL import Image, ImageDraw, ImageFont
+
+    # Monta as linhas da legenda a partir do cenário
+    etiologia = scenario.get("etiologia", "")
+    tecido    = scenario.get("tecido", "")
+    exsudato  = scenario.get("exsudato", "")
+    infeccao  = bool(scenario.get("infeccao", False))
+    bordas    = scenario.get("bordas", "")
+
+    linha1_parts = [
+        _ETIOLOGY_LABEL.get(etiologia, etiologia),
+        _TISSUE_LABEL.get(tecido, f"Tecido: {tecido}") if tecido else None,
+    ]
+    linha2_parts = [
+        _EXUDATE_LABEL.get(exsudato, f"Exsudato: {exsudato}") if exsudato else None,
+        f"Bordas: {bordas}" if bordas else None,
+        "⚠ Sinais de infecção" if infeccao else None,
+    ]
+
+    linha1 = "  |  ".join(p for p in linha1_parts if p)
+    linha2 = "  |  ".join(p for p in linha2_parts if p)
+    linhas = [l for l in [linha1, linha2] if l]
+
+    # Abre a imagem original
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    w, h = img.size
+
+    # Dimensiona a barra proporcional à imagem
+    font_size = max(18, w // 45)
+    padding   = font_size // 2
+    bar_height = (font_size + padding) * len(linhas) + padding * 2
+
+    # Tenta carregar fonte; cai para padrão se não achar
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+    except Exception:
+        font = ImageFont.load_default()
+        font_small = font
+
+    # Cria nova imagem com barra embaixo
+    new_img = Image.new("RGB", (w, h + bar_height), color=(255, 255, 255))
+    new_img.paste(img, (0, 0))
+
+    draw = ImageDraw.Draw(new_img)
+
+    # Fundo da barra (azul-escuro do projeto)
+    draw.rectangle([(0, h), (w, h + bar_height)], fill=(30, 58, 138))  # #1e3a8a
+
+    # Linha separadora
+    draw.line([(0, h), (w, h)], fill=(37, 99, 235), width=3)  # #2563eb
+
+    # Textos
+    y = h + padding
+    for i, linha in enumerate(linhas):
+        f = font if i == 0 else font_small
+        draw.text((padding * 2, y), linha, fill=(255, 255, 255), font=f)
+        y += font_size + padding
+
+    # Rodapé direito: "Imagem didática – Simulador TIMERS"
+    rodape = "Imagem didática – Simulador TIMERS / UFPel"
+    try:
+        font_tiny = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", max(12, font_size - 4)
+        )
+    except Exception:
+        font_tiny = font_small
+    bbox = draw.textbbox((0, 0), rodape, font=font_tiny)
+    tw = bbox[2] - bbox[0]
+    draw.text((w - tw - padding * 2, h + padding), rodape, fill=(147, 197, 253), font=font_tiny)
+
+    # Salva como PNG sem perda
+    out = io.BytesIO()
+    new_img.save(out, format="PNG", optimize=False)
+    return out.getvalue()
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +283,7 @@ def generate_wound_image_gemini(
     try:
         result = _gemini_imagen4(prompt, api_key)
         if result:
-            return result
+            return _add_caption_bar(result, scenario)
     except Exception as exc:
         last_exc = exc
 
@@ -185,7 +291,7 @@ def generate_wound_image_gemini(
     try:
         result = _gemini_native_image(prompt, api_key)
         if result:
-            return result
+            return _add_caption_bar(result, scenario)
     except Exception as exc:
         last_exc = exc
 
@@ -268,4 +374,4 @@ def generate_wound_image_fal(
 
     img_resp = requests.get(image_url, timeout=60)
     img_resp.raise_for_status()
-    return img_resp.content
+    return _add_caption_bar(img_resp.content, scenario)
